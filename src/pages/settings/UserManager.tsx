@@ -420,7 +420,7 @@ export default function UserManager() {
                               Reset Pass
                             </button>
                             
-                            {user.username !== 'super_admin' && (
+                            {user.username !== 'admin' && (
                               <button
                                 onClick={() => handleToggleUserStatus(user)}
                                 className={`p-1 rounded-lg border transition-all cursor-pointer ${

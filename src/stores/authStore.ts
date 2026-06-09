@@ -120,29 +120,10 @@ export const useAuthStore = create<AuthState>()(
             }
           } else {
             // Web environment mock login
-            if (username === 'mahaveer' && password === 'branch123') {
+            if (username === 'admin' && password === '7014') {
               const mockSession: UserSession = {
-                username: 'Mahaveer Ji',
-                role: 'ROLE_BRANCH',
-                entity: 'BRANCH',
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                lastActivity: new Date().toISOString()
-              };
-              set({ session: mockSession, isAuthenticated: true, isLoading: false, error: null });
-              return { success: true };
-            } else if (username === 'ho_admin' && password === 'ho123') {
-              const mockSession: UserSession = {
-                username: 'HO Manager',
-                role: 'ROLE_HO',
-                entity: 'HO',
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                lastActivity: new Date().toISOString()
-              };
-              set({ session: mockSession, isAuthenticated: true, isLoading: false, error: null });
-              return { success: true };
-            } else if (username === 'super_admin' && password === 'super123') {
-              const mockSession: UserSession = {
-                username: 'Super Admin',
+                username: 'admin',
+                display_name: 'Super Admin',
                 role: 'ROLE_SUPER',
                 entity: 'ALL',
                 expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

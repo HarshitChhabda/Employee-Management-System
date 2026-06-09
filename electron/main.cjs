@@ -184,7 +184,6 @@ function createWindow() {
       .then(() => {
         mainWindow.loadURL(DEV_SERVER_URL);
         mainWindow.show();
-        mainWindow.webContents.openDevTools();
         console.log('✓ Electron connected to Vite dev server');
       })
       .catch((err) => {

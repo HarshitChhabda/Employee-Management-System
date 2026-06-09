@@ -12,7 +12,6 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showDemoTip, setShowDemoTip] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,11 +20,6 @@ export default function Login() {
     if (result && result.success) {
       navigate('/', { replace: true });
     }
-  };
-
-  const fillCredentials = (user: string, pass: string) => {
-    setUsername(user);
-    setPassword(pass);
   };
 
   return (
@@ -140,57 +134,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {showDemoTip && (
-            <div className="mt-8 pt-6 border-t border-white/[0.06] space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
-                  {language === 'hi' ? 'डेमो क्रेडेंशियल्स' : 'Demo Credentials'}
-                </span>
-                <button
-                  onClick={() => setShowDemoTip(false)}
-                  className="text-[9px] font-mono text-slate-500 hover:text-slate-300 font-bold"
-                >
-                  [ {language === 'hi' ? 'छिपाएं' : 'Hide'} ]
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => fillCredentials('branch_admin', 'branch123')}
-                  className="px-2.5 py-2 bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] rounded-xl text-[10px] text-slate-300 transition-all font-bold text-left cursor-pointer"
-                >
-                  <div className="text-blue-400 text-[9px] uppercase font-mono tracking-tighter">Branch Admin</div>
-                  <div className="text-[9px] text-slate-400 mt-0.5 truncate">Mahaveer Ji</div>
-                </button>
-
-                <button
-                  onClick={() => fillCredentials('ho_admin', 'ho123')}
-                  className="px-2.5 py-2 bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] rounded-xl text-[10px] text-slate-300 transition-all font-bold text-left cursor-pointer"
-                >
-                  <div className="text-indigo-400 text-[9px] uppercase font-mono tracking-tighter">HO Admin</div>
-                  <div className="text-[9px] text-slate-400 mt-0.5 truncate">HO Manager</div>
-                </button>
-
-                <button
-                  onClick={() => fillCredentials('super_admin', 'super123')}
-                  className="px-2.5 py-2 bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] rounded-xl text-[10px] text-slate-300 transition-all font-bold text-left cursor-pointer"
-                >
-                  <div className="text-purple-400 text-[9px] uppercase font-mono tracking-tighter">Super Admin</div>
-                  <div className="text-[9px] text-slate-400 mt-0.5 truncate">ReadOnly View</div>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!showDemoTip && (
-            <button
-              onClick={() => setShowDemoTip(true)}
-              className="mt-6 w-full text-[9px] font-mono text-slate-500 hover:text-slate-300 font-bold transition-colors cursor-pointer"
-            >
-              [ {language === 'hi' ? 'डेमो क्रेडेंशियल्स दिखाएं' : 'Show Demo Credentials'} ]
-            </button>
-          )}
         </div>
 
         <div className="mt-6 text-center">

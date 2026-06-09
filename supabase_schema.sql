@@ -384,9 +384,7 @@ CREATE INDEX IF NOT EXISTS idx_leave_balances_employee_year ON leave_balances(em
 
 INSERT INTO app_users (id, username, display_name, password, role, entity, is_active)
 VALUES 
-  ('usr_branch_001', 'branch_admin', 'Mahaveer Ji', 'branch123', 'ROLE_BRANCH', 'BRANCH', 1),
-  ('usr_ho_001', 'ho_admin', 'Head Office Admin', 'ho123', 'ROLE_HO', 'HO', 1),
-  ('usr_super_001', 'super_admin', 'Super Admin', 'super123', 'ROLE_SUPER', 'ALL', 1)
+  ('usr_super_001', 'admin', 'Super Admin', '7014', 'ROLE_SUPER', 'ALL', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO system_config (key, value) VALUES 

@@ -404,22 +404,17 @@ async function setupDatabase() {
     )
   `);
 
-  // Seed default users if table is empty
+  // Seed default super admin if table is empty
   try {
     const userCount = await db.get("SELECT COUNT(*) as count FROM app_users");
     if (userCount && userCount.count === 0) {
       const { hashPassword } = require('./passwordUtils.cjs');
-      const branchHash = await hashPassword('branch123');
-      const hoHash = await hashPassword('ho123');
-      const superHash = await hashPassword('super123');
+      const adminHash = await hashPassword('7014');
       await db.run(`
         INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active)
-        VALUES 
-          (?, 'branch_admin', 'Mahaveer Ji', 'branch123', ?, 'ROLE_BRANCH', 'BRANCH', 1),
-          (?, 'ho_admin', 'Head Office Admin', 'ho123', ?, 'ROLE_HO', 'HO', 1),
-          (?, 'super_admin', 'Super Admin', 'super123', ?, 'ROLE_SUPER', 'ALL', 1)
-      `, [uuidv4(), branchHash, uuidv4(), hoHash, uuidv4(), superHash]);
-      console.log('[Database] Seeded 3 default app_users successfully (passwords hashed).');
+        VALUES (?, 'admin', 'Super Admin', '7014', ?, 'ROLE_SUPER', 'ALL', 1)
+      `, [uuidv4(), adminHash]);
+      console.log('[Database] Seeded default admin user successfully.');
     }
   } catch (e) {
     console.error('Seed app_users error:', e);
