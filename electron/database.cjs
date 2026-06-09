@@ -494,6 +494,22 @@ async function setupDatabase() {
     console.log('[Migration] Password hashing migration skipped:', e.message);
   }
 
+  // Ensure default admin user exists (username: admin, password: 7014)
+  try {
+    const { hashPassword } = require('./passwordUtils.cjs');
+    const adminUser = await db.get("SELECT id FROM app_users WHERE LOWER(username) = 'admin'");
+    if (!adminUser) {
+      const adminHash = await hashPassword('7014');
+      await db.run(`
+        INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active)
+        VALUES (?, 'admin', 'Super Admin', '7014', ?, 'ROLE_SUPER', 'ALL', 1)
+      `, [uuidv4(), adminHash]);
+      console.log('[Migration] Created default admin user (admin/7014)');
+    }
+  } catch(e) {
+    console.log('[Migration] Admin user migration skipped:', e.message);
+  }
+
   // Sync existing mobile_number to phone if phone is null
   try {
     await db.run('UPDATE employees SET phone = mobile_number WHERE (phone IS NULL OR phone = "") AND mobile_number IS NOT NULL AND mobile_number != ""');
