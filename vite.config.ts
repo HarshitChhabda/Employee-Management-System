@@ -8,6 +8,7 @@ export default defineConfig(async () => {
   const plugins = [react(), tailwindcss()];
   // Native element picker plugin is disabled to prevent Windows Node.js access violation crashes (code 3221225786)
   return {
+    base: './',
     plugins,
     resolve: {
       alias: {
