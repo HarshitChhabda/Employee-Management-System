@@ -143,17 +143,17 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     const cloudInterval = setInterval(checkCloud, 15000);
 
     const checkForUpdates = async () => {
-      if (window.electronAPI) {
+      if (window.electronAPI?.updater) {
         try {
-          const res = await window.electronAPI.invoke('api:update:check') as any;
-          if (res && res.success) {
-            setUpdateAvailable(res.updates && res.updates.length > 0);
+          const res = await window.electronAPI.updater.getStatus() as any;
+          if (res && res.updateAvailable) {
+            setUpdateAvailable(true);
           }
         } catch (e) { /* ignore */ }
       }
     };
     checkForUpdates();
-    const updateInterval = setInterval(checkForUpdates, 60000);
+    const updateInterval = setInterval(checkForUpdates, 120000);
 
     return () => {
       clearInterval(cloudInterval);

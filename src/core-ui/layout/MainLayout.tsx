@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar } from '@/core-ui/navigation/Sidebar';
 import { Navbar } from '@/core-ui/navigation/Navbar';
 import { useConnectivity } from '@/lib/ConnectivityContext';
+import { UpdateNotification } from '@/components/UpdateNotification';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -49,6 +50,9 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             Operational Continuity: Offline Sync Active
           </div>
         )}
+
+        {/* Auto-Update Notification */}
+        <UpdateNotification />
       </div>
     </div>
   );
