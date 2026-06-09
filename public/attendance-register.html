@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel-Style Attendance Register</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header Section */
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: #bdc3c7;
+        }
+
+        select {
+            padding: 6px 12px;
+            border: 1px solid #34495e;
+            background: #34495e;
+            color: white;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        /* Summary Bar */
+        .summary-bar {
+            background: #ecf0f1;
+            border-bottom: 2px solid #bdc3c7;
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-shrink: 0;
+            font-size: 12px;
+        }
+
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+
+        .summary-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .summary-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .summary-value {
+            font-weight: 700;
+            color: #2c3e50;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .summary-divider {
+            width: 1px;
+            height: 20px;
+            background: #bdc3c7;
+            margin: 0 10px;
+        }
+
+        .summary-total {
+            font-weight: 700;
+            color: #2c3e50;
+            margin-left: auto;
+        }
+
+        /* Bulk Actions Bar */
+        .bulk-bar {
+            background: #dfe6e9;
+            border-bottom: 1px solid #b2bec3;
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            font-size: 12px;
+        }
+
+        .bulk-bar select {
+            background: white;
+            color: #2c3e50;
+            border: 1px solid #b2bec3;
+            padding: 5px 10px;
+        }
+
+        .btn {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #219a52;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d68910;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .selected-count {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-left: 10px;
+        }
+
+        /* Table Container */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+            background: white;
+        }
+
+        /* Excel-Style Table */
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+            table-layout: fixed;
+        }
+
+        /* Sticky Columns */
+        th.sticky-col,
+        td.sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            background: white;
+        }
+
+        th.sticky-col:nth-child(2),
+        td.sticky-col:nth-child(2) {
+            left: 40px;
+        }
+
+        th.sticky-col:nth-child(3),
+        td.sticky-col:nth-child(3) {
+            left: 130px;
+        }
+
+        /* Sticky Header */
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        thead th {
+            background: #34495e;
+            color: white;
+            font-weight: 600;
+            padding: 8px 4px;
+            border: 1px solid #2c3e50;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        thead th.sticky-col {
+            z-index: 30;
+            background: #2c3e50;
+        }
+
+        /* Date Header Row */
+        .date-header-row th {
+            background: #34495e;
+            padding: 4px 2px;
+            font-size: 11px;
+        }
+
+        .day-number {
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .day-name {
+            font-size: 10px;
+            opacity: 0.9;
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* Column Widths */
+        th:nth-child(1), td:nth-child(1) { width: 40px; }
+        th:nth-child(2), td:nth-child(2) { width: 90px; }
+        th:nth-child(3), td:nth-child(3) { width: 180px; }
+
+        /* Date columns */
+        th.date-col, td.date-col {
+            width: 32px;
+            min-width: 32px;
+            max-width: 32px;
+        }
+
+        /* Table Body */
+        tbody td {
+            border: 1px solid #ddd;
+            padding: 0;
+            height: 22px;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        tbody td:hover {
+            background: #e8f4f8;
+        }
+
+        tbody td.sticky-col {
+            background: #f8f9fa;
+            font-weight: 500;
+            cursor: default;
+        }
+
+        tbody td.sticky-col:hover {
+            background: #f8f9fa;
+        }
+
+        /* Checkbox cell */
+        td.checkbox-cell {
+            padding: 0;
+        }
+
+        td.checkbox-cell input[type="checkbox"] {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Employee ID cell */
+        td.emp-id {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            color: #555;
+            padding: 0 4px;
+            text-align: left;
+        }
+
+        /* Employee Name cell */
+        td.emp-name {
+            padding: 0 8px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Attendance Cell */
+        td.attendance-cell {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-weight: 700;
+            font-size: 11px;
+            position: relative;
+        }
+
+        td.attendance-cell:hover {
+            filter: brightness(0.95);
+        }
+
+        /* Status Colors */
+        .status-P {
+            background: #c6efce !important;
+            color: #276221;
+        }
+
+        .status-A {
+            background: #ffc7ce !important;
+            color: #9c0006;
+        }
+
+        .status-CL {
+            background: #ffeb9c !important;
+            color: #9c6500;
+        }
+
+        .status-PL {
+            background: #fff2cc !important;
+            color: #7d6608;
+        }
+
+        .status-HCL {
+            background: #ffe0b2 !important;
+            color: #6d3b00;
+        }
+
+        .status-OD {
+            background: #e8d5f5 !important;
+            color: #5b2d8e;
+        }
+
+        .status-HD {
+            background: #fce4ec !important;
+            color: #880e4f;
+        }
+
+        /* Status Dropdown Popup */
+        .status-popup {
+            position: absolute;
+            background: white;
+            border: 2px solid #34495e;
+            border-radius: 6px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            min-width: 160px;
+            overflow: hidden;
+        }
+
+        .status-popup-header {
+            background: #34495e;
+            color: white;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid #eee;
+        }
+
+        .status-option:last-child {
+            border-bottom: none;
+        }
+
+        .status-option:hover {
+            background: #ecf0f1;
+        }
+
+        .status-swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+
+        .status-info {
+            flex: 1;
+        }
+
+        .status-code {
+            font-weight: 700;
+            font-size: 12px;
+            font-family: 'Consolas', monospace;
+        }
+
+        .status-fullname {
+            font-size: 10px;
+            color: #666;
+        }
+
+        .status-option-clear {
+            background: #f8f9fa;
+            color: #666;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        .status-option-clear:hover {
+            background: #e9ecef;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            background: #2c3e50;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 1001;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        /* Pagination */
+        .pagination {
+            background: #ecf0f1;
+            border-top: 2px solid #bdc3c7;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            font-size: 12px;
+        }
+
+        .pagination-info {
+            color: #555;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .page-btn {
+            padding: 6px 14px;
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            background: #34495e;
+            color: white;
+            border-color: #34495e;
+        }
+
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .page-numbers {
+            display: flex;
+            gap: 5px;
+        }
+
+        .page-number {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+            min-width: 36px;
+            text-align: center;
+        }
+
+        .page-number:hover {
+            background: #ecf0f1;
+        }
+
+        .page-number.active {
+            background: #34495e;
+            color: white;
+            border-color: #34495e;
+        }
+
+        /* Confirmation Dialog */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            transform: scale(0.9);
+            transition: transform 0.3s;
+        }
+
+        .modal-overlay.show .modal {
+            transform: scale(1);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+
+        .modal-text {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #95a5a6;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>📊 Attendance Register</h1>
+        <div class="controls">
+            <div class="control-group">
+                <label>Month:</label>
+                <select id="monthSelect">
+                    <option value="0">January</option>
+                    <option value="1">February</option>
+                    <option value="2">March</option>
+                    <option value="3">April</option>
+                    <option value="4">May</option>
+                    <option value="5">June</option>
+                    <option value="6">July</option>
+                    <option value="7">August</option>
+                    <option value="8">September</option>
+                    <option value="9">October</option>
+                    <option value="10">November</option>
+                    <option value="11" selected>December</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Year:</label>
+                <select id="yearSelect">
+                    <option value="2023">2023</option>
+                    <option value="2024" selected>2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Bar -->
+    <div class="summary-bar">
+        <div class="summary-item">
+            <div class="summary-color status-P"></div>
+            <span class="summary-label">P:</span>
+            <span class="summary-value" id="countP">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-A"></div>
+            <span class="summary-label">A:</span>
+            <span class="summary-value" id="countA">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-CL"></div>
+            <span class="summary-label">CL:</span>
+            <span class="summary-value" id="countCL">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-PL"></div>
+            <span class="summary-label">PL:</span>
+            <span class="summary-value" id="countPL">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-HCL"></div>
+            <span class="summary-label">HCL:</span>
+            <span class="summary-value" id="countHCL">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-OD"></div>
+            <span class="summary-label">OD:</span>
+            <span class="summary-value" id="countOD">0</span>
+        </div>
+        <div class="summary-item">
+            <div class="summary-color status-HD"></div>
+            <span class="summary-label">HD:</span>
+            <span class="summary-value" id="countHD">0</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-total">
+            <span id="totalFilled">0</span> / <span id="totalCells">0</span> cells filled
+        </div>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    <div class="bulk-bar">
+        <select id="bulkStatusSelect">
+            <option value="">-- Select Status --</option>
+            <option value="P">P - Present</option>
+            <option value="A">A - Absent</option>
+            <option value="CL">CL - Casual Leave</option>
+            <option value="PL">PL - Paid Leave</option>
+            <option value="HCL">HCL - Half Casual Leave</option>
+            <option value="OD">OD - On Duty</option>
+            <option value="HD">HD - Half Day</option>
+        </select>
+        <button class="btn btn-primary" onclick="fillSelected()">Fill Selected</button>
+        <button class="btn btn-success" onclick="fillCurrentPage()">Fill This Page</button>
+        <button class="btn btn-warning" onclick="fillAllConfirm()">Fill All 450</button>
+        <div class="summary-divider"></div>
+        <button class="btn btn-danger" onclick="clearSelected()">Clear Selected</button>
+        <button class="btn btn-danger" onclick="clearAllConfirm()">Clear All</button>
+        <span class="selected-count" id="selectedCount">0 selected</span>
+    </div>
+
+    <!-- Table Container -->
+    <div class="table-container" id="tableContainer">
+        <table id="attendanceTable">
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        <div class="pagination-info">
+            Showing <span id="showingStart">0</span>–<span id="showingEnd">0</span> of <span id="totalEmployees">0</span> employees
+        </div>
+        <div class="pagination-controls">
+            <button class="page-btn" id="prevBtn" onclick="prevPage()">← Prev</button>
+            <div class="page-numbers" id="pageNumbers"></div>
+            <button class="page-btn" id="nextBtn" onclick="nextPage()">Next →</button>
+        </div>
+    </div>
+
+    <!-- Status Popup (Hidden by default) -->
+    <div class="status-popup" id="statusPopup" style="display: none;">
+        <div class="status-popup-header">Select Status</div>
+        <div class="status-option" onclick="setStatus('P')">
+            <div class="status-swatch status-P"></div>
+            <div class="status-info">
+                <div class="status-code">P</div>
+                <div class="status-fullname">Present</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('A')">
+            <div class="status-swatch status-A"></div>
+            <div class="status-info">
+                <div class="status-code">A</div>
+                <div class="status-fullname">Absent</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('CL')">
+            <div class="status-swatch status-CL"></div>
+            <div class="status-info">
+                <div class="status-code">CL</div>
+                <div class="status-fullname">Casual Leave</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('PL')">
+            <div class="status-swatch status-PL"></div>
+            <div class="status-info">
+                <div class="status-code">PL</div>
+                <div class="status-fullname">Paid Leave</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('HCL')">
+            <div class="status-swatch status-HCL"></div>
+            <div class="status-info">
+                <div class="status-code">HCL</div>
+                <div class="status-fullname">Half Casual Leave</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('OD')">
+            <div class="status-swatch status-OD"></div>
+            <div class="status-info">
+                <div class="status-code">OD</div>
+                <div class="status-fullname">On Duty</div>
+            </div>
+        </div>
+        <div class="status-option" onclick="setStatus('HD')">
+            <div class="status-swatch status-HD"></div>
+            <div class="status-info">
+                <div class="status-code">HD</div>
+                <div class="status-fullname">Half Day</div>
+            </div>
+        </div>
+        <div class="status-option status-option-clear" onclick="clearCell()">❌ Clear</div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip"></div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Confirm Action</div>
+            <div class="modal-text" id="modalText">Are you sure?</div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalConfirmBtn" onclick="confirmAction()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        const ROWS_PER_PAGE = 50;
+        
+        const STATUS_CONFIG = {
+            'P':   { name: 'Present', bg: '#c6efce', text: '#276221' },
+            'A':   { name: 'Absent', bg: '#ffc7ce', text: '#9c0006' },
+            'CL':  { name: 'Casual Leave', bg: '#ffeb9c', text: '#9c6500' },
+            'PL':  { name: 'Paid Leave', bg: '#fff2cc', text: '#7d6608' },
+            'HCL': { name: 'Half Casual Leave', bg: '#ffe0b2', text: '#6d3b00' },
+            'OD':  { name: 'On Duty', bg: '#e8d5f5', text: '#5b2d8e' },
+            'HD':  { name: 'Half Day', bg: '#fce4ec', text: '#880e4f' }
+        };
+
+        // ==================== SAMPLE EMPLOYEE DATA (450+) ====================
+        // In production, replace this with API fetch
+        const EMPLOYEES = (() => {
+            const employees = [];
+            const firstNames = ['Rajesh', 'Suresh', 'Mahesh', 'Ramesh', 'Naresh', 'Dinesh', 'Mukesh', 'Yogesh', 'Hitesh', 'Rajnish',
+                'Amit', 'Sumit', 'Lalit', 'Mohit', 'Rohit', 'Sunita', 'Anita', 'Sarita', 'Rekha', 'Neha',
+                'Priya', 'Kavita', 'Ritu', 'Pooja', 'Sneha', 'Deepa', 'Meera', 'Geeta', 'Seema', 'Reena',
+                'Vikram', 'Vijay', 'Sanjay', 'Ajay', 'Ravi', 'Kavi', 'Naveen', 'Praveen', 'Bhupendra', 'Devendra',
+                'Pankaj', 'Manoj', 'Sanjeev', 'Rajeev', 'Ashok', 'Mukesh', 'Prakash', 'Dinesh', 'Girish', 'Harish'];
+            const lastNames = ['Sharma', 'Kumar', 'Singh', 'Gupta', 'Verma', 'Yadav', 'Jha', 'Mishra', 'Patel', 'Reddy',
+                'Naidu', 'Rao', 'Iyer', 'Nair', 'Menon', 'Pillai', 'Desai', 'Shah', 'Mehta', 'Jain'];
+            const departments = ['Production', 'Sales', 'Marketing', 'HR', 'Finance', 'IT', 'Operations', 'Quality', 'R&D', 'Admin'];
+
+            for (let i = 1; i <= 450; i++) {
+                const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+                const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+                employees.push({
+                    id: `EMP${String(i).padStart(3, '0')}`,
+                    name: `${firstName} ${lastName}`,
+                    department: departments[Math.floor(Math.random() * departments.length)]
+                });
+            }
+            return employees;
+        })();
+
+        // ==================== STATE ====================
+        let currentPage = 1;
+        let currentMonth = new Date().getMonth();
+        let currentYear = new Date().getFullYear();
+        let selectedCells = new Set();
+        let currentPopupCell = null;
+        let pendingAction = null;
+
+        // Attendance Data Storage: key = "EMPID_YYYY_MM_DD", value = status
+        const attendanceData = {};
+
+        // ==================== UTILITY FUNCTIONS ====================
+        function getDaysInMonth(month, year) {
+            return new Date(year, month + 1, 0).getDate();
+        }
+
+        function getDayName(day, month, year) {
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const date = new Date(year, month, day);
+            return days[date.getDay()];
+        }
+
+        function generateStorageKey(empId, day) {
+            return `${empId}_${currentYear}_${currentMonth}_${day}`;
+        }
+
+        function getStatus(empId, day) {
+            const key = generateStorageKey(empId, day);
+            return attendanceData[key] || '';
+        }
+
+        function setStatusValue(empId, day, status) {
+            const key = generateStorageKey(empId, day);
+            if (status) {
+                attendanceData[key] = status;
+            } else {
+                delete attendanceData[key];
+            }
+        }
+
+        // ==================== RENDER FUNCTIONS ====================
+        function renderTable() {
+            const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+
+            // Render Header
+            let headerHTML = '<tr>';
+            headerHTML += '<th class="sticky-col"><input type="checkbox" id="selectAllHeader" onclick="toggleSelectAll()"></th>';
+            headerHTML += '<th class="sticky-col">Employee ID</th>';
+            headerHTML += '<th class="sticky-col">Employee Name</th>';
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayName = getDayName(day, currentMonth, currentYear);
+                headerHTML += `<th class="date-col">
+                    <span class="day-number">${day}</span>
+                    <span class="day-name">${dayName}</span>
+                </th>`;
+            }
+            headerHTML += '</tr>';
+            thead.innerHTML = headerHTML;
+
+            renderBody();
+            updateSummary();
+        }
+
+        function renderBody() {
+            const tbody = document.getElementById('tableBody');
+            const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+            const totalPages = Math.ceil(EMPLOYEES.length / ROWS_PER_PAGE);
+            const start = (currentPage - 1) * ROWS_PER_PAGE;
+            const end = Math.min(start + ROWS_PER_PAGE, EMPLOYEES.length);
+            const pageEmployees = EMPLOYEES.slice(start, end);
+
+            let bodyHTML = '';
+            pageEmployees.forEach((emp) => {
+                bodyHTML += '<tr>';
+                bodyHTML += `<td class="sticky-col checkbox-cell">
+                    <input type="checkbox" class="row-checkbox" data-empid="${emp.id}" onchange="toggleRowSelect('${emp.id}')">
+                </td>`;
+                bodyHTML += `<td class="sticky-col emp-id">${emp.id}</td>`;
+                bodyHTML += `<td class="sticky-col emp-name" title="${emp.name}">${emp.name}</td>`;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const status = getStatus(emp.id, day);
+                    const statusClass = status ? `status-${status}` : '';
+                    bodyHTML += `<td class="date-col attendance-cell ${statusClass}" 
+                        data-empid="${emp.id}" 
+                        data-day="${day}"
+                        onclick="showPopup(event, '${emp.id}', ${day})"
+                        onmouseenter="showTooltip(event, '${status}')"
+                        onmouseleave="hideTooltip()"
+                    >${status || ''}</td>`;
+                }
+                bodyHTML += '</tr>';
+            });
+            tbody.innerHTML = bodyHTML;
+
+            document.getElementById('showingStart').textContent = start + 1;
+            document.getElementById('showingEnd').textContent = end;
+            document.getElementById('totalEmployees').textContent = EMPLOYEES.length;
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage === totalPages;
+
+            renderPageNumbers(totalPages);
+            updateSelectedCount();
+        }
+
+        function renderPageNumbers(totalPages) {
+            const container = document.getElementById('pageNumbers');
+            let html = '';
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+
+            if (startPage > 1) {
+                html += `<button class="page-number" onclick="goToPage(1)">1</button>`;
+                if (startPage > 2) html += `<span style="padding: 6px;">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="page-number ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) html += `<span style="padding: 6px;">...</span>`;
+                html += `<button class="page-number" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function updateSummary() {
+            const counts = { 'P': 0, 'A': 0, 'CL': 0, 'PL': 0, 'HCL': 0, 'OD': 0, 'HD': 0 };
+            let totalFilled = 0;
+
+            Object.keys(attendanceData).forEach(key => {
+                if (key.includes(`_${currentYear}_${currentMonth}_`)) {
+                    const status = attendanceData[key];
+                    if (counts.hasOwnProperty(status)) {
+                        counts[status]++;
+                        totalFilled++;
+                    }
+                }
+            });
+
+            document.getElementById('countP').textContent = counts['P'];
+            document.getElementById('countA').textContent = counts['A'];
+            document.getElementById('countCL').textContent = counts['CL'];
+            document.getElementById('countPL').textContent = counts['PL'];
+            document.getElementById('countHCL').textContent = counts['HCL'];
+            document.getElementById('countOD').textContent = counts['OD'];
+            document.getElementById('countHD').textContent = counts['HD'];
+
+            const totalCells = EMPLOYEES.length * getDaysInMonth(currentMonth, currentYear);
+            document.getElementById('totalFilled').textContent = totalFilled;
+            document.getElementById('totalCells').textContent = totalCells;
+        }
+
+        // ==================== POPUP & TOOLTIP ====================
+        function showPopup(event, empId, day) {
+            event.stopPropagation();
+            const popup = document.getElementById('statusPopup');
+            const cell = event.target;
+            const rect = cell.getBoundingClientRect();
+            
+            currentPopupCell = { empId, day, element: cell };
+            
+            let top = rect.bottom + window.scrollY;
+            let left = rect.left + window.scrollX;
+            
+            if (left + 160 > window.innerWidth) {
+                left = window.innerWidth - 170;
+            }
+            
+            popup.style.top = top + 'px';
+            popup.style.left = left + 'px';
+            popup.style.display = 'block';
+            
+            setTimeout(() => {
+                document.addEventListener('click', closePopupOnClickOutside, { once: true });
+            }, 10);
+        }
+
+        function closePopupOnClickOutside(event) {
+            const popup = document.getElementById('statusPopup');
+            if (!popup.contains(event.target)) {
+                popup.style.display = 'none';
+                currentPopupCell = null;
+            }
+        }
+
+        function setStatus(status) {
+            if (!currentPopupCell) return;
+            const { empId, day, element } = currentPopupCell;
+            setStatusValue(empId, day, status);
+            element.textContent = status;
+            element.className = `date-col attendance-cell status-${status}`;
+            closePopup();
+            updateSummary();
+        }
+
+        function clearCell() {
+            if (!currentPopupCell) return;
+            const { empId, day, element } = currentPopupCell;
+            setStatusValue(empId, day, '');
+            element.textContent = '';
+            element.className = 'date-col attendance-cell';
+            closePopup();
+            updateSummary();
+        }
+
+        function showTooltip(event, status) {
+            if (!status) return;
+            const tooltip = document.getElementById('tooltip');
+            const config = STATUS_CONFIG[status];
+            if (!config) return;
+            tooltip.textContent = `${status} - ${config.name}`;
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY - 30) + 'px';
+            tooltip.classList.add('show');
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').classList.remove('show');
+        }
+
+        // ==================== SELECTION ====================
+        function toggleSelectAll() {
+            const headerCheckbox = document.getElementById('selectAllHeader');
+            const isChecked = headerCheckbox.checked;
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+                const empId = checkbox.dataset.empid;
+                toggleRowSelection(empId, isChecked);
+            });
+            updateSelectedCount();
+        }
+
+        function toggleRowSelect(empId) {
+            const checkbox = document.querySelector(`.row-checkbox[data-empid="${empId}"]`);
+            toggleRowSelection(empId, checkbox.checked);
+            updateSelectedCount();
+            const allChecked = document.querySelectorAll('.row-checkbox:checked').length === document.querySelectorAll('.row-checkbox').length;
+            document.getElementById('selectAllHeader').checked = allChecked;
+        }
+
+        function toggleRowSelection(empId, isSelected) {
+            const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+            for (let day = 1; day <= daysInMonth; day++) {
+                const key = `${empId}_${day}`;
+                if (isSelected) selectedCells.add(key);
+                else selectedCells.delete(key);
+            }
+        }
+
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.row-checkbox:checked').length;
+            document.getElementById('selectedCount').textContent = `${count} selected`;
+        }
+
+        // ==================== BULK OPERATIONS ====================
+        function getSelectedStatus() {
+            const status = document.getElementById('bulkStatusSelect').value;
+            if (!status) {
+                alert('Please select a status first');
+                return null;
+            }
+            return status;
+        }
+
+        function fillSelected() {
+            const status = getSelectedStatus();
+            if (!status) return;
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            if (checkboxes.length === 0) {
+                alert('No employees selected');
+                return;
+            }
+            checkboxes.forEach(checkbox => {
+                const empId = checkbox.dataset.empid;
+                const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+                for (let day = 1; day <= daysInMonth; day++) {
+                    setStatusValue(empId, day, status);
+                }
+            });
+            renderBody();
+            updateSummary();
+        }
+
+        function fillCurrentPage() {
+            const status = getSelectedStatus();
+            if (!status) return;
+            const start = (currentPage - 1) * ROWS_PER_PAGE;
+            const end = Math.min(start + ROWS_PER_PAGE, EMPLOYEES.length);
+            for (let i = start; i < end; i++) {
+                const empId = EMPLOYEES[i].id;
+                const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+                for (let day = 1; day <= daysInMonth; day++) {
+                    setStatusValue(empId, day, status);
+                }
+            }
+            renderBody();
+            updateSummary();
+        }
+
+        function fillAllConfirm() {
+            const status = getSelectedStatus();
+            if (!status) return;
+            showModal(
+                'Fill All 450 Employees',
+                `This will set ALL ${EMPLOYEES.length} employees for ALL days in ${getMonthName(currentMonth)} ${currentYear} to "${STATUS_CONFIG[status].name}".`,
+                () => { fillAll(status); closeModal(); }
+            );
+        }
+
+        function fillAll(status) {
+            EMPLOYEES.forEach(emp => {
+                const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+                for (let day = 1; day <= daysInMonth; day++) {
+                    setStatusValue(emp.id, day, status);
+                }
+            });
+            renderBody();
+            updateSummary();
+        }
+
+        function clearSelected() {
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            if (checkboxes.length === 0) {
+                alert('No employees selected');
+                return;
+            }
+            checkboxes.forEach(checkbox => {
+                const empId = checkbox.dataset.empid;
+                const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+                for (let day = 1; day <= daysInMonth; day++) {
+                    setStatusValue(empId, day, '');
+                }
+            });
+            renderBody();
+            updateSummary();
+        }
+
+        function clearAllConfirm() {
+            showModal(
+                'Clear All Attendance',
+                `This will clear ALL attendance data for ALL ${EMPLOYEES.length} employees in ${getMonthName(currentMonth)} ${currentYear}.`,
+                () => { clearAll(); closeModal(); }
+            );
+        }
+
+        function clearAll() {
+            Object.keys(attendanceData).forEach(key => {
+                if (key.includes(`_${currentYear}_${currentMonth}_`)) {
+                    delete attendanceData[key];
+                }
+            });
+            renderBody();
+            updateSummary();
+        }
+
+        // ==================== PAGINATION ====================
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                selectedCells.clear();
+                renderBody();
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(EMPLOYEES.length / ROWS_PER_PAGE);
+            if (currentPage < totalPages) {
+                currentPage++;
+                selectedCells.clear();
+                renderBody();
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            selectedCells.clear();
+            renderBody();
+        }
+
+        // ==================== MONTH/YEAR CHANGE ====================
+        function getMonthName(month) {
+            const names = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+            return names[month];
+        }
+
+        function onMonthYearChange() {
+            currentMonth = parseInt(document.getElementById('monthSelect').value);
+            currentYear = parseInt(document.getElementById('yearSelect').value);
+            selectedCells.clear();
+            renderTable();
+        }
+
+        // ==================== MODAL ====================
+        function showModal(title, text, confirmCallback) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalText').textContent = text;
+            pendingAction = confirmCallback;
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('confirmModal').classList.remove('show');
+            pendingAction = null;
+        }
+
+        function confirmAction() {
+            if (pendingAction) pendingAction();
+        }
+
+        // ==================== INITIALIZATION ====================
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('monthSelect').addEventListener('change', onMonthYearChange);
+            document.getElementById('yearSelect').addEventListener('change', onMonthYearChange);
+            renderTable();
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.getElementById('statusPopup').style.display = 'none';
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
