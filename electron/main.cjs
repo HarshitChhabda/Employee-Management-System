@@ -37,10 +37,30 @@ if (!isDev) {
   autoUpdater.logger = console;
 }
 
+// Helper: log update events to audit log
+async function logUpdateEvent(actionType, fieldName, oldVal, newVal, details) {
+  if (!db) return;
+  try {
+    await db.run(
+      `INSERT INTO employee_history (history_id, employee_id, employee_name, action_type, field_name, old_value, new_value, changed_by, change_reason, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        uuidv4(), 'SYSTEM', 'Auto-Updater', actionType,
+        fieldName || null, oldVal || null, newVal || null,
+        'System', details || null,
+        new Date().toISOString()
+      ]
+    );
+  } catch (e) {
+    console.error('[AuditLog] Failed to log update event:', e.message);
+  }
+}
+
 function setupAutoUpdaterEvents() {
-  autoUpdater.on('checking-for-update', () => {
+  autoUpdater.on('checking-for-update', async () => {
     console.log('[AutoUpdater] Checking for updates...');
     if (mainWindow) mainWindow.webContents.send('update:checking', true);
+    await logUpdateEvent('UPDATE', 'version_check', app.getVersion(), null, 'Checking for updates from GitHub');
   });
 
   autoUpdater.on('update-available', async (info) => {
@@ -52,6 +72,7 @@ function setupAutoUpdaterEvents() {
         releaseNotes: info.releaseNotes,
       });
     }
+    await logUpdateEvent('UPDATE', 'update_available', app.getVersion(), info.version, `Update v${info.version} found on GitHub`);
 
     if (db) {
       console.log('[AutoUpdater] Creating pre-update snapshot...');
@@ -65,14 +86,16 @@ function setupAutoUpdaterEvents() {
     }
   });
 
-  autoUpdater.on('update-not-available', (info) => {
+  autoUpdater.on('update-not-available', async (info) => {
     console.log('[AutoUpdater] No update available');
     if (mainWindow) mainWindow.webContents.send('update:not-available', true);
+    await logUpdateEvent('UPDATE', 'update_not_available', app.getVersion(), null, 'App is up to date');
   });
 
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', async (err) => {
     console.error('[AutoUpdater] Error:', err.message);
     if (mainWindow) mainWindow.webContents.send('update:error', err.message);
+    await logUpdateEvent('UPDATE', 'update_error', app.getVersion(), null, `Error: ${err.message}`);
   });
 
   autoUpdater.on('download-progress', (progressObj) => {
@@ -94,18 +117,21 @@ function setupAutoUpdaterEvents() {
         releaseDate: info.releaseDate,
       });
     }
+    await logUpdateEvent('UPDATE', 'update_downloaded', app.getVersion(), info.version, `v${info.version} downloaded, ready to install`);
 
     if (db) {
       console.log('[AutoUpdater] Running post-update integrity check...');
       const postCheck = await safePostUpdateCheck(app, db);
       if (!postCheck.success) {
         console.error('[AutoUpdater] Post-update check failed:', postCheck.error);
+        await logUpdateEvent('UPDATE', 'update_integrity_failed', null, null, `Integrity check failed: ${postCheck.error}`);
         if (mainWindow) {
           const wantRecovery = await showRecoveryDialog(mainWindow);
           if (wantRecovery) {
             const recoveryResult = await attemptRecovery(app, db);
             if (recoveryResult.success) {
               console.log('[AutoUpdater] Recovery successful from:', recoveryResult.snapshotUsed);
+              await logUpdateEvent('UPDATE', 'update_recovery', null, null, `Recovered from snapshot: ${recoveryResult.snapshotUsed}`);
               if (mainWindow) {
                 mainWindow.webContents.send('update:recovery-success', {
                   snapshotName: recoveryResult.snapshotUsed,
@@ -113,6 +139,7 @@ function setupAutoUpdaterEvents() {
               }
             } else {
               console.error('[AutoUpdater] Recovery failed:', recoveryResult.error);
+              await logUpdateEvent('UPDATE', 'update_recovery_failed', null, null, `Recovery failed: ${recoveryResult.error}`);
             }
           }
         }
@@ -614,6 +641,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('api:updater:install', async () => {
+    await logUpdateEvent('UPDATE', 'update_install', app.getVersion(), null, 'User initiated install and restart');
     autoUpdater.quitAndInstall(false, true);
     return { success: true };
   });

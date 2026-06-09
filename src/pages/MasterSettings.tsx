@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Building2, Briefcase, Plus, Trash2, ShieldAlert, Sparkles, Layers,
   CloudLightning, Database, Eye, Check, AlertCircle, RefreshCcw,
   Package, HardDrive, Cloud, Download, Upload, FolderOpen,
-  Sliders
+  Sliders, ArrowUpCircle
 } from 'lucide-react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useAuthStore } from '@/stores/authStore';
@@ -58,6 +58,15 @@ export default function MasterSettings() {
   const [updateLoading, setUpdateLoading] = useState(false);
   const [checkResult, setCheckResult] = useState<{ local: boolean; supabase: boolean } | null>(null);
 
+  // GitHub Auto-Updater State
+  const [ghUpdateStatus, setGhUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'>('idle');
+  const [ghCurrentVersion, setGhCurrentVersion] = useState('');
+  const [ghNewVersion, setGhNewVersion] = useState('');
+  const [ghReleaseNotes, setGhReleaseNotes] = useState('');
+  const [ghDownloadProgress, setGhDownloadProgress] = useState(0);
+  const [ghError, setGhError] = useState('');
+  const [ghReleaseDate, setGhReleaseDate] = useState('');
+
   // General Notification Message
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -66,6 +75,58 @@ export default function MasterSettings() {
     loadSyncConfig();
     fetchBackups();
     fetchUpdates();
+  }, []);
+
+  // GitHub Auto-Updater event listeners
+  useEffect(() => {
+    if (!window.electronAPI?.updater) return;
+    const api = window.electronAPI.updater;
+
+    // Get current version on mount
+    api.getStatus().then((res) => {
+      if (res?.currentVersion) setGhCurrentVersion(res.currentVersion);
+    }).catch(() => {});
+
+    const removeCheck = api.onCheck(() => {
+      setGhUpdateStatus('checking');
+      setGhError('');
+    });
+
+    const removeAvailable = api.onAvailable((data) => {
+      setGhUpdateStatus('available');
+      setGhNewVersion(data.version);
+      setGhReleaseNotes(data.releaseNotes || '');
+      setGhReleaseDate(data.releaseDate || '');
+    });
+
+    const removeNotAvailable = api.onNotAvailable(() => {
+      setGhUpdateStatus('idle');
+      setGhNewVersion('');
+    });
+
+    const removeError = api.onError((msg) => {
+      setGhUpdateStatus('error');
+      setGhError(msg);
+    });
+
+    const removeProgress = api.onDownloadProgress((data) => {
+      setGhUpdateStatus('downloading');
+      setGhDownloadProgress(data.percent);
+    });
+
+    const removeDownloaded = api.onDownloaded((data) => {
+      setGhUpdateStatus('downloaded');
+      setGhNewVersion(data.version);
+    });
+
+    return () => {
+      removeCheck();
+      removeAvailable();
+      removeNotAvailable();
+      removeError();
+      removeProgress();
+      removeDownloaded();
+    };
   }, []);
 
   const showMsg = (text: string, type: 'success' | 'error' = 'success') => {
@@ -422,6 +483,22 @@ export default function MasterSettings() {
       failed: 'bg-red-500/10 text-red-500 border-red-500/20',
     };
     return styles[status] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+  };
+
+  // ─── GitHub Auto-Updater Handlers ───
+  const handleGhCheckUpdate = async () => {
+    if (!window.electronAPI?.updater) return;
+    await window.electronAPI.updater.check();
+  };
+
+  const handleGhDownload = async () => {
+    if (!window.electronAPI?.updater) return;
+    await window.electronAPI.updater.download();
+  };
+
+  const handleGhInstall = async () => {
+    if (!window.electronAPI?.updater) return;
+    await window.electronAPI.updater.install();
   };
 
   // ─── Danger Zone Logic ───
@@ -945,6 +1022,130 @@ export default function MasterSettings() {
                     <Cloud className="w-3.5 h-3.5" />
                     <span>{language === 'hi' ? 'Supabase से सिंक' : 'Sync Supabase'}</span>
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* GitHub Auto-Update Section */}
+            <div className="p-4 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[var(--text-primary)]">
+                  <ArrowUpCircle className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-black uppercase tracking-wide">
+                    {language === 'hi' ? 'GitHub ऑटो-अपडेट' : 'GitHub Auto-Update'}
+                  </span>
+                  {ghCurrentVersion && (
+                    <span className="px-2 py-0.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-lg text-[9px] font-mono font-bold text-[var(--text-secondary)]">
+                      v{ghCurrentVersion}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={handleGhCheckUpdate}
+                  disabled={ghUpdateStatus === 'checking'}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800/40 text-white font-black text-[10px] rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <RefreshCcw className={`w-3 h-3 ${ghUpdateStatus === 'checking' ? 'animate-spin' : ''}`} />
+                  <span>{language === 'hi' ? 'जांचें' : 'Check'}</span>
+                </button>
+              </div>
+
+              {/* Checking status */}
+              {ghUpdateStatus === 'checking' && (
+                <div className="flex items-center gap-2 text-blue-500 text-[10px] font-bold">
+                  <RefreshCcw className="w-3 h-3 animate-spin" />
+                  <span>{language === 'hi' ? 'GitHub पर अपडेट जांच रहे हैं...' : 'Checking GitHub for updates...'}</span>
+                </div>
+              )}
+
+              {/* Update Available */}
+              {ghUpdateStatus === 'available' && (
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <ArrowUpCircle className="w-4 h-4 text-blue-500" />
+                    <span className="text-xs font-black text-blue-500">
+                      {language === 'hi' ? `v${ghNewVersion} उपलब्ध है!` : `v${ghNewVersion} Available!`}
+                    </span>
+                    {ghReleaseDate && (
+                      <span className="text-[9px] font-mono text-[var(--text-secondary)]">
+                        ({new Date(ghReleaseDate).toLocaleDateString()})
+                      </span>
+                    )}
+                  </div>
+                  {ghReleaseNotes && (
+                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed line-clamp-3">{ghReleaseNotes}</p>
+                  )}
+                  <button
+                    onClick={handleGhDownload}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Download className="w-3 h-3" />
+                    {language === 'hi' ? 'डाउनलोड करें' : 'Download Update'}
+                  </button>
+                </div>
+              )}
+
+              {/* Downloading */}
+              {ghUpdateStatus === 'downloading' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold">
+                    <span className="text-blue-500">
+                      {language === 'hi' ? 'डाउनलोड हो रहा है...' : 'Downloading...'}
+                    </span>
+                    <span className="font-mono text-[var(--text-secondary)]">{Math.round(ghDownloadProgress)}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[var(--bg-card)] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-300"
+                      style={{ width: `${ghDownloadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Downloaded - Ready to Install */}
+              {ghUpdateStatus === 'downloaded' && (
+                <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-purple-500" />
+                    <span className="text-xs font-black text-purple-500">
+                      {language === 'hi' ? `v${ghNewVersion} तैयार है!` : `v${ghNewVersion} Ready!`}
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleGhInstall}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-black uppercase rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3 h-3" />
+                    {language === 'hi' ? 'इंस्टॉल करें' : 'Install & Restart'}
+                  </button>
+                </div>
+              )}
+
+              {/* Error */}
+              {ghUpdateStatus === 'error' && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    <span className="text-xs font-black text-red-500">
+                      {language === 'hi' ? 'अपडेट में समस्या' : 'Update Error'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-red-400 font-mono">{ghError}</p>
+                  <button
+                    onClick={handleGhCheckUpdate}
+                    className="px-3 py-1.5 bg-[var(--bg-card)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-[10px] font-black uppercase rounded-xl transition-colors cursor-pointer"
+                  >
+                    {language === 'hi' ? 'पुनः प्रयास करें' : 'Retry'}
+                  </button>
+                </div>
+              )}
+
+              {/* Up to date */}
+              {ghUpdateStatus === 'idle' && ghCurrentVersion && !ghNewVersion && (
+                <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-bold">
+                  <Check className="w-3 h-3" />
+                  <span>{language === 'hi' ? 'ऐप अप टू डेट है' : 'App is up to date'}</span>
                 </div>
               )}
             </div>
