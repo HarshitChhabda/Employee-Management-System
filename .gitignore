@@ -33,3 +33,32 @@ release/
 *.blockmap
 *.yml
 !electron/**/*.dll
+
+# AI / Agent tools
+.agent/
+.opencode/
+graphify-out/
+.graphify_detect.json
+.graphify_python
+.graphify_uncached.txt
+AGENTS.md
+
+# Test / scratch / debug files
+test.js
+test2.cjs
+test3.cjs
+check_db.cjs
+fix_letters_errors.cjs
+fix_sync.cjs
+fix_syntax.cjs
+query_sync.cjs
+replace_api.cjs
+updateLetters.cjs
+migrate.js
+scratch/
+publish.log
+
+# Local database / schema files
+database.sqlite
+local_schema.sql
+supabase_schema.sql
