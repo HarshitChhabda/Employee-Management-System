@@ -1,7 +1,7 @@
 {
   "name": "placeholder-model-2",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -45,9 +45,11 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "publish": {
       "provider": "github",
