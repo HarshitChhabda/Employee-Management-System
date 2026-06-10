@@ -49,13 +49,10 @@ let mainWindow;
 let db;
 
 // ===== Auto Updater Configuration =====
-autoUpdater.autoDownload = false;
+autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
-
-// For private repos: set GH_TOKEN env variable before building
-if (process.env.GH_TOKEN) {
-  autoUpdater.requestHeaders = { Authorization: `token ${process.env.GH_TOKEN}` };
-}
+autoUpdater.disableWebInstaller = true;
+autoUpdater.disableDowngrade = false;
 
 if (!isDev) {
   autoUpdater.logger = console;

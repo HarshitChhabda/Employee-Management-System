@@ -44,7 +44,7 @@ export const UpdateNotification = () => {
     });
 
     const removeAvailable = api.onAvailable((data: UpdateInfo) => {
-      setUpdateState({ status: 'available', info: data });
+      setUpdateState({ status: 'downloading', progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 } });
       setDismissed(false);
     });
 
@@ -166,25 +166,23 @@ export const UpdateNotification = () => {
             <RefreshCcw className="w-4 h-4 text-blue-500 animate-spin" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-black text-[var(--text-primary)]">
-                {language === 'hi' ? 'डाउनलोड हो रहा है...' : 'Downloading...'}
+                {language === 'hi' ? 'अपडेट डाउनलोड हो रहा है...' : 'Downloading update...'}
               </p>
               <p className="text-[10px] font-bold text-[var(--text-secondary)] font-mono">
-                {Math.round(updateState.progress.percent)}% · {formatBytes(updateState.progress.transferred)} / {formatBytes(updateState.progress.total)}
+                {updateState.progress.total > 0
+                  ? `${Math.round(updateState.progress.percent)}% · ${formatBytes(updateState.progress.transferred)} / ${formatBytes(updateState.progress.total)}`
+                  : (language === 'hi' ? 'शुरू हो रहा है...' : 'Starting...')}
               </p>
             </div>
-            <button
-              onClick={handleDismiss}
-              className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer flex-shrink-0"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
           </div>
-          <div className="w-full h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-300"
-              style={{ width: `${updateState.progress.percent}%` }}
-            />
-          </div>
+          {updateState.progress.total > 0 && (
+            <div className="w-full h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-300"
+                style={{ width: `${updateState.progress.percent}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 

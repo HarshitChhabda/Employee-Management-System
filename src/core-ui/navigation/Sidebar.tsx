@@ -67,10 +67,13 @@ const navGroups = [
 
 function getUserDisplayName(session: any) {
   if (!session) return '';
-  if (session.role === 'ROLE_BRANCH') return 'Shreemahaveerji';
-  if (session.role === 'ROLE_HO') return 'Jaipur Office';
-  if (session.role === 'ROLE_SUPER') return 'Super Admin';
-  return session.display_name || session.username;
+  if (session.display_name) return session.display_name;
+  
+  if (session.username === 'branch' && session.role === 'ROLE_BRANCH') return 'Shreemahaveerji';
+  if (session.username === 'ho' && session.role === 'ROLE_HO') return 'Jaipur Office';
+  if (session.username === 'admin' && session.role === 'ROLE_SUPER') return 'Super Admin';
+  
+  return session.username;
 }
 
 function getUserRoleLabel(session: any, language: string) {
