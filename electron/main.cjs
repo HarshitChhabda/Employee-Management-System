@@ -3,6 +3,25 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const { randomUUID: uuidv4 } = require('crypto');
+
+// Load .env file for main process
+try {
+  const envPath = path.join(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const [key, ...rest] = trimmed.split('=');
+        if (key && rest.length > 0) {
+          process.env[key.trim()] = rest.join('=').trim();
+        }
+      }
+    });
+  }
+} catch (e) {
+  console.log('[Main] Could not load .env file:', e.message);
+}
 const { autoUpdater } = require('electron-updater');
 const setupDatabase = require('./database.cjs');
 const registerApiHandlers = require('./api.cjs');
@@ -32,6 +51,11 @@ let db;
 // ===== Auto Updater Configuration =====
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
+
+// For private repos: set GH_TOKEN env variable before building
+if (process.env.GH_TOKEN) {
+  autoUpdater.requestHeaders = { Authorization: `token ${process.env.GH_TOKEN}` };
+}
 
 if (!isDev) {
   autoUpdater.logger = console;
@@ -93,8 +117,21 @@ function setupAutoUpdaterEvents() {
   });
 
   autoUpdater.on('error', async (err) => {
+    const is404 = err.message && (err.message.includes('404') || err.message.includes('Cannot find'));
+    if (is404) {
+      console.log('[AutoUpdater] No releases found (404) - skipping update check');
+      if (mainWindow) mainWindow.webContents.send('update:not-available', true);
+      return;
+    }
     console.error('[AutoUpdater] Error:', err.message);
-    if (mainWindow) mainWindow.webContents.send('update:error', err.message);
+    const userMessage = err.message.includes('net::')
+      ? 'Network error — internet connection check karo.'
+      : err.message.includes('ENOTFOUND')
+      ? 'GitHub server reachable nahi ho raha — internet check karo.'
+      : err.message.includes('timeout')
+      ? 'Request timeout — slow connection ya server busy hai.'
+      : `Update check failed: ${err.message}`;
+    if (mainWindow) mainWindow.webContents.send('update:error', userMessage);
     await logUpdateEvent('UPDATE', 'update_error', app.getVersion(), null, `Error: ${err.message}`);
   });
 
@@ -154,6 +191,11 @@ function checkForUpdates(force = false) {
     return;
   }
   autoUpdater.checkForUpdates().catch((err) => {
+    const is404 = err.message && (err.message.includes('404') || err.message.includes('Cannot find'));
+    if (is404) {
+      console.log('[AutoUpdater] No releases found (404) - skipping update check');
+      return;
+    }
     console.error('[AutoUpdater] Check failed:', err.message);
     if (mainWindow) mainWindow.webContents.send('update:error', err.message);
   });
@@ -656,11 +698,12 @@ app.whenReady().then(async () => {
         updateVersion: result?.updateInfo?.version || null,
       };
     } catch (err) {
+      const is404 = err.message && (err.message.includes('404') || err.message.includes('Cannot find'));
       return {
-        success: false,
+        success: !is404,
         currentVersion: app.getVersion(),
         updateAvailable: false,
-        error: err.message,
+        error: is404 ? null : err.message,
       };
     }
   });
