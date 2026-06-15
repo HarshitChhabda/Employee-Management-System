@@ -744,21 +744,21 @@ export default function Employees() {
 
         empData.employee_code = empData.employee_code || `Emp${String(successCount + employees.length + 1).padStart(4, '0')}`;
         
-        // Ensure category is lowercase if provided in english, otherwise default to permanent if not found since user specifically wants permanent, but fallback to daily_wage usually.
-        // Wait, better to normalize:
+        // Normalize category from Excel input
         if (empData.category && typeof empData.category === 'string') {
-          const catLower = empData.category.toLowerCase();
-          if (catLower === 'permanent' || catLower === 'स्थायी') {
-            empData.category = 'permanent';
-          } else if (catLower === 'contract' || catLower === 'अनुबंध') {
-            empData.category = 'contract';
-          } else {
-            empData.category = 'daily_wage';
-          }
+          const catLower = empData.category.toLowerCase().trim();
+          const categoryMap: Record<string, string> = {
+            'permanent': 'permanent', 'स्थायी': 'permanent',
+            'daily_wage': 'daily_wage', 'दैनिक वेतन': 'daily_wage',
+            'samvida': 'samvida', 'संविदा': 'samvida',
+            'probation': 'probation', 'परिवीक्षा': 'probation',
+            'masik_parishram': 'masik_parishram', 'मासिक पारिश्रम': 'masik_parishram',
+            'allowance': 'allowance', 'अलाउन्स': 'allowance',
+            'mandey': 'mandey', 'मानदेय': 'mandey',
+          };
+          empData.category = categoryMap[catLower] || 'daily_wage';
         } else {
-          // Defaulting to permanent as user seems to be importing permanent employees 
-          // or we can stick to daily_wage but handle it gracefully.
-          empData.category = 'permanent'; // changed default to permanent
+          empData.category = 'daily_wage';
         }
 
         empData.is_active = 1;

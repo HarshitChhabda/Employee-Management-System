@@ -350,12 +350,7 @@ async function registerApiHandlers(ipcMain, db) {
           throw new Error('ACCESS_DENIED: Apne entity data scope ke bahar edit karne ka adhikar nahi hai.');
         }
 
-        // Category change validation
-        if (updates.category && updates.category !== current.category) {
-          if (current.category === 'permanent') {
-            throw new Error('Permanent employee ki category change nahi ho sakti');
-          }
-        }
+        // Category change validation - all categories are changeable
 
         if (updates.phone !== undefined && updates.mobile_number === undefined) updates.mobile_number = updates.phone;
         if (updates.mobile_number !== undefined && updates.phone === undefined) updates.phone = updates.mobile_number;
