@@ -1842,7 +1842,6 @@ export default function Employees() {
         loading={deleting}
         confirmLabel={deleting ? 'Deleting...' : 'Delete / हटाएं'}
       />
-      />
 
       {/* Resign Modal */}
       {resignEmployee && (
