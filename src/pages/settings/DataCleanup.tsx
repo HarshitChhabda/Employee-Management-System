@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Trash2, ShieldAlert, AlertCircle, Users, Building2, CheckCircle2, RotateCcw, ArrowRight, Languages } from 'lucide-react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { masterAPI, employeeAPI } from '../../services/api';
-import { findNameVariants, type NameVariantGroup } from '../../lib/hindiNormalize';
+import { findNameVariants, type NameVariant, type NameVariantGroup } from '../../lib/hindiNormalize';
 import type { Employee } from '../../types/hrms';
 
 interface MasterItem {
