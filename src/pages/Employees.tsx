@@ -92,6 +92,8 @@ export default function Employees() {
   const [formData, setFormData] = useState<Partial<Employee> & { category_change_reason?: string }>({});
   const [activeTab, setActiveTab] = useState<'basic' | 'contact' | 'gov' | 'bank'>('basic');
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   const [masterDepartments, setMasterDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [masterDesignations, setMasterDesignations] = useState<Array<{ id: string; name: string }>>([]);
@@ -107,6 +109,7 @@ export default function Employees() {
   const [pendingWeeklyOffDay, setPendingWeeklyOffDay] = useState<string | null>(null);
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
   const [resignEmployee, setResignEmployee] = useState<Employee | null>(null);
+  const [resigning, setResigning] = useState(false);
   const [resignData, setResignData] = useState({ reason: '', resign_date: new Date().toISOString().split('T')[0] });
   const [showReportModal, setShowReportModal] = useState(false);
   const [empPage, setEmpPage] = useState(1);
@@ -227,6 +230,7 @@ export default function Employees() {
   };
 
   const fetchEmployees = async () => {
+    setSearching(true);
     setLoading(true);
     try {
       const params: { search?: string; category?: string } = {};
@@ -251,6 +255,7 @@ export default function Employees() {
       showToast('Failed to load employees / कर्मचारी लोड करने में विफल', 'error');
     } finally {
       setLoading(false);
+      setSearching(false);
     }
   };
 
@@ -282,6 +287,7 @@ export default function Employees() {
   };
 
   const handleDelete = async (id: string) => {
+    setDeleting(true);
     try {
       await employeeAPI.delete(id);
       showToast('Employee deleted / कर्मचारी हटाया गया', 'success');
@@ -289,8 +295,10 @@ export default function Employees() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete employee';
       showToast(message, 'error');
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmEmployee(null);
     }
-    setDeleteConfirmEmployee(null);
   };
 
   const openEditModal = (employee: Employee) => {
@@ -326,6 +334,7 @@ export default function Employees() {
       return;
     }
 
+    setResigning(true);
     try {
       await resignedAPI.create({
         employee_id: resignEmployee.id,
@@ -339,6 +348,8 @@ export default function Employees() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to mark as resigned';
       showToast(message, 'error');
+    } finally {
+      setResigning(false);
     }
   };
 
@@ -700,7 +711,7 @@ export default function Employees() {
           let val = row[excelHeader];
           if (val !== undefined && val !== null && String(val).trim() !== '') {
             const hindiFields = ['name', 'fathers_name', 'husband_name', 'address', 'bank_name', 'department', 'designation', 'title', 'category', 'dob', 'joining_date', 'tenure_end_date', 'appointment_date', 'basic_salary'];
-            if (isDevLys && typeof val === 'string' && hindiFields.includes(field)) {
+            if (isDevLys && typeof val === 'string' && hindiFields.includes(field) && field !== 'category') {
               const hasHindiUnicode = /[\u0900-\u097F]/.test(val);
               if (!hasHindiUnicode) {
                 try {
@@ -762,9 +773,6 @@ export default function Employees() {
         }
 
         empData.is_active = 1;
-        if (!empData.joining_date) {
-          empData.joining_date = new Date().toISOString().split('T')[0];
-        }
 
         try {
           const created = await employeeAPI.create(empData);
@@ -952,6 +960,17 @@ export default function Employees() {
           </select>
         </div>
       </div>
+
+      {/* Searching Indicator */}
+      {searching && !loading && (
+        <div className="flex items-center justify-center gap-3 py-3 px-4 bg-blue-500/10 border border-blue-500/20 rounded-xl mb-4">
+          <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <span className="text-blue-500 font-bold text-sm">Searching... / खोज रहे हैं...</span>
+        </div>
+      )}
 
       {/* Employee Table */}
       {(() => {
@@ -1818,8 +1837,11 @@ export default function Employees() {
         title="Delete Employee / कर्मचारी हटाएं"
         message={`Are you sure you want to delete ${deleteConfirmEmployee?.name}? This action cannot be undone.`}
         onConfirm={() => deleteConfirmEmployee && handleDelete(deleteConfirmEmployee.id)}
-        onCancel={() => setDeleteConfirmEmployee(null)}
+        onCancel={() => !deleting && setDeleteConfirmEmployee(null)}
         variant="danger"
+        loading={deleting}
+        confirmLabel={deleting ? 'Deleting...' : 'Delete / हटाएं'}
+      />
       />
 
       {/* Resign Modal */}
@@ -1872,17 +1894,21 @@ export default function Employees() {
               <button
                 type="button"
                 onClick={() => setResignEmployee(null)}
-                className="px-5 py-2.5 border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                disabled={resigning}
+                className="px-5 py-2.5 border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
               >
                 {hindiLabels.cancel}
               </button>
               <button
                 type="button"
                 onClick={markAsResigned}
-                disabled={!resignData.reason.trim()}
-                className="px-6 py-2.5 bg-gradient-to-r from-orange-600 to-red-600 hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-orange-500/20 cursor-pointer disabled:opacity-50"
+                disabled={!resignData.reason.trim() || resigning}
+                className="px-6 py-2.5 bg-gradient-to-r from-orange-600 to-red-600 hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-orange-500/20 cursor-pointer disabled:opacity-50 flex items-center gap-2"
               >
-                Confirm Resign / पुष्टि करें
+                {resigning && (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                )}
+                {resigning ? 'Processing...' : 'Confirm Resign / पुष्टि करें'}
               </button>
             </div>
           </div>
