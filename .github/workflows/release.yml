@@ -52,9 +52,9 @@ jobs:
         with:
           name: hrms-build-${{ github.sha }}
           path: |
-            release/*.exe
-            release/*.blockmap
-            release/*.yml
+            release/HRMS-Pro-Max-Setup-*.exe
+            release/HRMS-Pro-Max-Setup-*.exe.blockmap
+            release/latest.yml
           retention-days: 30
 
   release:
@@ -76,9 +76,9 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release/*.exe
-            release/*.blockmap
-            release/*.yml
+            release/HRMS-Pro-Max-Setup-*.exe
+            release/HRMS-Pro-Max-Setup-*.exe.blockmap
+            release/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
