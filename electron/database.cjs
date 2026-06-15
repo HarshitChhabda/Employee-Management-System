@@ -609,6 +609,18 @@ async function setupDatabase() {
     console.log('[Migration] Attendance status codes normalized to uppercase');
   } catch(e) { console.log('[Migration] Status migration skipped:', e.message); }
 
+  // Fix: Remove wrong 'Sunday' history entries for employees with no weekly off (None/empty)
+  try {
+    await db.run(`
+      DELETE FROM employee_weekly_off_history
+      WHERE employee_id IN (
+        SELECT id FROM employees WHERE weekly_off IS NULL OR weekly_off = '' OR weekly_off = 'None'
+      )
+      AND weekly_off = 'Sunday'
+    `);
+    console.log('[Migration] Cleaned up wrong Sunday history entries for employees with no weekly off');
+  } catch(e) { console.log('[Migration] Weekly off cleanup skipped:', e.message); }
+
   return db;
 }
 

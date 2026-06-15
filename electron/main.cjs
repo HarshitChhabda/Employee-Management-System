@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -225,20 +225,39 @@ function waitForDevServer(url, maxRetries = 30) {
 }
 
 function createWindow() {
+  // Detect screen size and set responsive dimensions
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const scaleFactor = primaryDisplay.scaleFactor || 1;
+
+  // Responsive window sizing based on screen
+  const windowWidth = Math.min(Math.max(Math.round(screenWidth * 0.85), 900), 1920);
+  const windowHeight = Math.min(Math.max(Math.round(screenHeight * 0.85), 600), 1080);
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: windowWidth,
+    height: windowHeight,
     minWidth: 900,
     minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      zoomFactor: 1.0,
     },
     show: false,
     backgroundColor: '#020617',
     titleBarStyle: 'default',
     title: 'HRMS Pro Max — Employee Management System',
+  });
+
+  // Pass screen info to renderer for responsive adjustments
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.send('screen:info', {
+      width: screenWidth,
+      height: screenHeight,
+      scaleFactor,
+    });
   });
 
   // Maximize the window automatically
@@ -681,7 +700,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('api:updater:install', async () => {
     await logUpdateEvent('UPDATE', 'update_install', app.getVersion(), null, 'User initiated install and restart');
-    autoUpdater.quitAndInstall(false, true);
+    autoUpdater.quitAndInstall(true, true);
     return { success: true };
   });
 

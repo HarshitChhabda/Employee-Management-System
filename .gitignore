@@ -38,9 +38,7 @@ release/
 .agent/
 .opencode/
 graphify-out/
-.graphify_detect.json
-.graphify_python
-.graphify_uncached.txt
+.graphify_*
 AGENTS.md
 
 # Test / scratch / debug files

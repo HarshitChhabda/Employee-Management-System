@@ -30,6 +30,7 @@ interface ElectronAPI {
     recovery: () => Promise<unknown>;
     getLogs: () => Promise<unknown>;
   };
+  onScreenInfo?: (callback: (data: { width: number; height: number; scaleFactor: number }) => void) => () => void;
 }
 
 interface Window {

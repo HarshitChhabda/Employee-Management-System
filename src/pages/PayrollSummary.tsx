@@ -115,10 +115,22 @@ export default function PayrollSummary() {
     const total_days = empAtt.length;
     
     const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    const salary = parseFloat(String(emp.basic_salary)) || 0;
-    const perDaySalary = salary / daysInMonth;
-    const salary_deduction = unpaid_days * perDaySalary;
-    const net_payable = Math.max(0, salary - salary_deduction);
+    
+    const salaryStr = String(emp.basic_salary || '').toLowerCase();
+    const isDailyWage = emp.category === 'daily_wage' || salaryStr.includes('प्रतिदिन') || salaryStr.includes('daily') || salaryStr.includes('day');
+    const salaryNum = parseFloat(salaryStr.replace(/[^\d.]/g, '')) || 0;
+
+    let net_payable = 0;
+    let salary_deduction = 0;
+
+    if (isDailyWage) {
+      net_payable = payable_days * salaryNum;
+      salary_deduction = unpaid_days * salaryNum;
+    } else {
+      const perDaySalary = salaryNum / daysInMonth;
+      salary_deduction = unpaid_days * perDaySalary;
+      net_payable = Math.max(0, salaryNum - salary_deduction);
+    }
 
     // Dynamic Attendance Rate formula
     const attendance_rate = total_days > 0 

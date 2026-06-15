@@ -5,7 +5,6 @@
 
 
 
-
 html,
 body,
 #root {
@@ -18,6 +17,23 @@ body,
 }
 
 
+/* ===== RESPONSIVE SCALE SYSTEM ===== */
+:root {
+  --ui-scale: 1;
+}
+@media (min-width: 1920px) {
+  :root { --ui-scale: 1.12; }
+}
+@media (min-width: 1440px) and (max-width: 1919px) {
+  :root { --ui-scale: 1.04; }
+}
+@media (max-width: 1100px) and (min-width: 901px) {
+  :root { --ui-scale: 0.93; }
+}
+@media (max-width: 900px) {
+  :root { --ui-scale: 0.85; }
+}
+
 :root {
   /* FONT SYSTEM */
   --font-sans: 'Inter', sans-serif;
@@ -25,11 +41,11 @@ body,
   --font-mono: 'DM Mono', monospace;
   --font-tabular: 'DM Mono', monospace;
 
-  /* SIZING & LAYOUT */
-  --sidebar-width: 240px;
-  --header-height: 52px;
-  --table-row-height: 34px;
-  --footer-height: 32px;
+  /* SIZING & LAYOUT (scaled) */
+  --sidebar-width: calc(240px * var(--ui-scale));
+  --header-height: calc(52px * var(--ui-scale));
+  --table-row-height: calc(34px * var(--ui-scale));
+  --footer-height: calc(32px * var(--ui-scale));
 
   /* BORDERS & RADIUS */
   --radius: 8px;
@@ -40,6 +56,77 @@ body,
   --radius-2xl: 16px;
   --radius-3xl: 24px;
   --radius-full: 9999px;
+}
+
+
+/* ===== RESPONSIVE SCALE SYSTEM ===== */
+/* Detect screen size and set scale factor.
+   Large screens (>=1920px): scale 1.15
+   Medium screens (>=1440px): scale 1.05
+   Default (1280px): scale 1.0
+   Small screens (<=1100px): scale 0.92
+   Tiny screens (<=900px): scale 0.85
+*/
+:root {
+  --ui-scale: 1;
+}
+@media (min-width: 1920px) {
+  :root { --ui-scale: 1.15; }
+}
+@media (min-width: 1440px) and (max-width: 1919px) {
+  :root { --ui-scale: 1.05; }
+}
+@media (max-width: 1100px) and (min-width: 901px) {
+  :root { --ui-scale: 0.92; }
+}
+@media (max-width: 900px) {
+  :root { --ui-scale: 0.85; }
+}
+
+html {
+  font-size: calc(16px * var(--ui-scale));
+}
+
+:root {
+  /* FONT SYSTEM */
+  --font-sans: 'Inter', sans-serif;
+  --font-hindi: 'Noto Sans Devanagari', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-tabular: 'DM Mono', monospace;
+
+  /* SIZING & LAYOUT (scaled) */
+  --sidebar-width: calc(240px * var(--ui-scale));
+  --header-height: calc(52px * var(--ui-scale));
+  --table-row-height: calc(34px * var(--ui-scale));
+  --footer-height: calc(32px * var(--ui-scale));
+
+  /* BORDERS & RADIUS */
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+
+  /* SPACING SCALE */
+  --space-xs: calc(4px * var(--ui-scale));
+  --space-sm: calc(8px * var(--ui-scale));
+  --space-md: calc(12px * var(--ui-scale));
+  --space-lg: calc(16px * var(--ui-scale));
+  --space-xl: calc(20px * var(--ui-scale));
+  --space-2xl: calc(24px * var(--ui-scale));
+
+  /* FONT SIZE SCALE */
+  --text-2xs: calc(8px * var(--ui-scale));
+  --text-xs: calc(10px * var(--ui-scale));
+  --text-sm: calc(12px * var(--ui-scale));
+  --text-base: calc(14px * var(--ui-scale));
+  --text-lg: calc(16px * var(--ui-scale));
+  --text-xl: calc(18px * var(--ui-scale));
+  --text-2xl: calc(20px * var(--ui-scale));
+  --text-3xl: calc(24px * var(--ui-scale));
 }
 
 /* ===== TYPOGRAPHY HELPERS ===== */

@@ -220,9 +220,10 @@ export const EmployeeForm = ({
               <div className="flex flex-col gap-2">
                 <label className="text-[9px] font-black uppercase tracking-widest text-[var(--text-muted)]">Remuneration Logic</label>
                 <Input 
-                  type="number"
+                  type="text"
                   value={formData.basic_salary || ''}
                   onChange={e => handleChange('basic_salary', e.target.value)}
+                  placeholder="e.g. 10000 or 160/- प्रतिदिन"
                   className="h-12 bg-[var(--bg-tertiary)]/50 rounded-xl font-mono"
                 />
               </div>

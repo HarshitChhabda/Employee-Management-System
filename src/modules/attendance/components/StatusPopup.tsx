@@ -26,16 +26,21 @@ export const StatusPopup = ({ show, position, onClose, onSelect, onClear }: Stat
 
   if (!show) return null;
 
+  const popupH = 340;
+  const popupW = 230;
+  const spaceBelow = window.innerHeight - position.y;
+  const openAbove = spaceBelow < popupH + 20;
+
   return (
     <>
       <div className="position-fixed inset-0" style={{ zIndex: 1060 }} onClick={onClose} />
       <div
-        className="position-absolute glass-panel shadow-premium overflow-hidden animate-fade-in"
+        className="position-fixed glass-panel shadow-premium overflow-hidden animate-fade-in"
         style={{ 
-          left: Math.min(position.x, window.innerWidth - 240), 
-          top: Math.min(position.y, window.innerHeight - 400), 
+          left: Math.min(position.x, window.innerWidth - popupW - 10), 
+          top: openAbove ? position.y - popupH - 8 : position.y + 8, 
           zIndex: 1070,
-          minWidth: '220px',
+          minWidth: `${popupW}px`,
           borderRadius: 'var(--radius-lg)',
           background: 'color-mix(in srgb, var(--surface), transparent 20%)',
           border: '1px solid var(--border-subtle)',

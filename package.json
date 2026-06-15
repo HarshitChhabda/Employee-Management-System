@@ -1,7 +1,7 @@
 {
   "name": "placeholder-model-2",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -59,6 +59,7 @@
     }
   },
   "dependencies": {
+    "@anthro-ai/krutidev-unicode": "^0.1.0",
     "@base-ui/react": "^1.4.1",
     "@supabase/supabase-js": "^2.99.1",
     "@tailwindcss/vite": "^4.2.1",

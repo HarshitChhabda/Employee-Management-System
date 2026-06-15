@@ -64,6 +64,9 @@ export default function AttendanceReport() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [reportPage, setReportPage] = useState(1);
+  const [rptShowAll, setRptShowAll] = useState(false);
+  const REPORT_PAGE_SIZE = 20;
 
   const [leaveDatesModal, setLeaveDatesModal] = useState<{
     isOpen: boolean;
@@ -123,6 +126,8 @@ export default function AttendanceReport() {
       return matchSearch && matchCategory;
     });
   }, [employees, searchTerm, categoryFilter]);
+
+  useEffect(() => { setReportPage(1); setRptShowAll(false); }, [searchTerm, categoryFilter]);
 
   const getEmployeeStats = useCallback((employeeId: string) => {
     const empAtt = attendance.filter(a => {
@@ -383,9 +388,17 @@ export default function AttendanceReport() {
         </div>
       </div>
 
-      {/* Main Grid Workspace */}
+              {/* Main Grid Workspace */}
       <div className="flex-grow p-6 md:p-8 overflow-hidden bg-transparent">
         <div className="p-0 h-full overflow-hidden flex flex-col bg-[var(--bg-card)] shadow-2xl border border-[var(--border-primary)] rounded-2xl backdrop-blur-2xl">
+          {(() => {
+            const rptTotal = filteredEmployees.length;
+            const rptTotalPages = Math.max(1, Math.ceil(rptTotal / REPORT_PAGE_SIZE));
+            const safeRptPage = rptShowAll ? 1 : Math.min(reportPage, rptTotalPages);
+            const rptStart = rptShowAll ? 0 : (safeRptPage - 1) * REPORT_PAGE_SIZE;
+            const pagedRpt = rptShowAll ? filteredEmployees : filteredEmployees.slice(rptStart, rptStart + REPORT_PAGE_SIZE);
+            return (
+          <>
           <div className="overflow-auto custom-scrollbar flex-grow">
             <table className="theme-table w-full text-left border-collapse">
               <thead>
@@ -410,7 +423,7 @@ export default function AttendanceReport() {
                       </div>
                     </td>
                   </tr>
-                ) : filteredEmployees.length === 0 ? (
+                  ) : pagedRpt.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-32 text-center opacity-40 select-none">
                       <div className="flex flex-col items-center">
@@ -419,8 +432,8 @@ export default function AttendanceReport() {
                       </div>
                     </td>
                   </tr>
-                ) : (
-                  filteredEmployees.map((emp, index) => {
+                  ) : (
+                    pagedRpt.map((emp, index) => {
                     const stats = getEmployeeStats(emp.id);
                     const clTotal = (stats['CL'] || 0) + (stats['HCL'] || 0) * 0.5;
                     const payable = (stats['P'] || 0) + (stats['CL'] || 0) + (stats['PL'] || 0) + (stats['WO'] || 0) + (stats['OD'] || 0) + (stats['HD'] || 0) * 0.5 + (stats['HCL'] || 0) * 0.5;
@@ -542,6 +555,56 @@ export default function AttendanceReport() {
               </tbody>
             </table>
           </div>
+          {/* Report Pagination */}
+          {rptTotalPages > 1 && (
+            <div className="px-6 py-3 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
+              <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest font-mono">
+                {rptShowAll ? `Showing all ${rptTotal}` : `Showing ${rptStart + 1}–${Math.min(rptStart + REPORT_PAGE_SIZE, rptTotal)} of ${rptTotal}`}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => { setRptShowAll(false); setReportPage(p => Math.max(1, p - 1)); }} disabled={rptShowAll || safeRptPage === 1}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer">
+                  Prev
+                </button>
+                {!rptShowAll && Array.from({ length: rptTotalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === rptTotalPages || Math.abs(p - safeRptPage) <= 1)
+                  .reduce<(number | string)[]>((acc, p, i, arr) => {
+                    if (i > 0 && typeof arr[i - 1] === 'number' && (p as number) - (arr[i - 1] as number) > 1) acc.push('...');
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    typeof p === 'string' ? (
+                      <span key={`e${i}`} className="px-1 text-[var(--text-secondary)]">…</span>
+                    ) : (
+                      <button key={p} onClick={() => { setRptShowAll(false); setReportPage(p); }}
+                        className={`w-8 h-8 text-[10px] font-black rounded-lg border transition-all cursor-pointer ${
+                          p === safeRptPage
+                            ? 'bg-[var(--accent-blue)] text-white border-[var(--accent-blue)] shadow-md'
+                            : 'border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                        }`}>
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button onClick={() => setRptShowAll(!rptShowAll)}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all cursor-pointer ${
+                    rptShowAll
+                      ? 'bg-[var(--accent-blue)] text-white border-[var(--accent-blue)] shadow-md'
+                      : 'border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                  }`}>
+                  All
+                </button>
+                <button onClick={() => { setRptShowAll(false); setReportPage(p => Math.min(rptTotalPages, p + 1)); }} disabled={rptShowAll || safeRptPage === rptTotalPages}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer">
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
+            );
+          })()}
         </div>
       </div>
 

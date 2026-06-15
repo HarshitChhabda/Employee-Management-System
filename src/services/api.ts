@@ -54,6 +54,18 @@ export const employeeAPI = {
 
   delete: async (id: string): Promise<{ success: boolean }> =>
     (await invoke?.('api:employees', 'delete', { id })) as { success: boolean },
+
+  hardDelete: async (id: string): Promise<{ success: boolean }> =>
+    (await invoke?.('api:employees', 'hardDelete', { id })) as { success: boolean },
+
+  batchRename: async (renames: Array<{ oldName: string; newName: string; field: 'department' | 'designation' }>): Promise<{ success: boolean; updated: number }> =>
+    (await invoke?.('api:employees', 'batchRename', { renames })) as { success: boolean; updated: number },
+
+  batchRenameMasters: async (renames: Array<{ oldName: string; newName: string; type: 'dept' | 'desig' }>): Promise<{ success: boolean; updated: number }> =>
+    (await invoke?.('api:masters', 'batchRenameMasters', { renames })) as { success: boolean; updated: number },
+
+  batchRenameNames: async (renames: Array<{ oldName: string; newName: string }>): Promise<{ success: boolean; updated: number }> =>
+    (await invoke?.('api:employees', 'batchRenameNames', { renames })) as { success: boolean; updated: number },
 };
 
 // ─── Attendance ──────────────────────────────────────────────

@@ -55,6 +55,8 @@ export default function AttendanceExcel() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const [popupDragging, setPopupDragging] = useState(false);
+  const popupDragOffset = useRef({ x: 0, y: 0 });
   const [currentCell, setCurrentCell] = useState<{empId: string; day: number} | null>(null);
   const [bulkStatus, setBulkStatus] = useState('');
   const [saving, setSaving] = useState(false);
@@ -132,19 +134,48 @@ export default function AttendanceExcel() {
 
   const handleCellClick = (e: React.MouseEvent, empId: string, day: number) => {
     const rect = (e.target as HTMLElement).getBoundingClientRect();
-    const containerRect = tableContainerRef.current?.getBoundingClientRect();
-    if (containerRect) {
-      // BUG 5 FIX: Clamp popup position to prevent overflow
-      const popupW = 220, popupH = 320;
-      let x = rect.left - containerRect.left + 100;
-      let y = rect.top - containerRect.top + 30;
-      if (x + popupW > containerRect.width) x = Math.max(10, containerRect.width - popupW - 10);
-      if (y + popupH > containerRect.height) y = Math.max(10, rect.top - containerRect.top - popupH);
-      setPopupPosition({ x, y });
-    }
+    const popupW = 220, popupH = 320;
+    // Place popup RIGHT next to the clicked cell
+    let x = rect.right + 4;
+    let y = rect.top;
+    // If no space on right, place on left of cell
+    if (x + popupW > window.innerWidth) x = rect.left - popupW - 4;
+    // If no space below, shift up so popup stays within viewport
+    if (y + popupH > window.innerHeight) y = Math.max(4, window.innerHeight - popupH - 4);
+    // If above viewport, pin to top
+    if (y < 4) y = 4;
+    // Clamp horizontal
+    if (x < 4) x = 4;
+    setPopupPosition({ x, y });
     setCurrentCell({ empId, day });
     setShowPopup(true);
   };
+
+  const handlePopupDragStart = (e: React.MouseEvent) => {
+    setPopupDragging(true);
+    popupDragOffset.current = {
+      x: e.clientX - popupPosition.x,
+      y: e.clientY - popupPosition.y,
+    };
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!popupDragging) return;
+    const handleMove = (e: MouseEvent) => {
+      setPopupPosition({
+        x: Math.max(4, Math.min(e.clientX - popupDragOffset.current.x, window.innerWidth - 230)),
+        y: Math.max(4, Math.min(e.clientY - popupDragOffset.current.y, window.innerHeight - 30)),
+      });
+    };
+    const handleUp = () => setPopupDragging(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [popupDragging]);
 
   const handleStatusSelect = useCallback((status: string) => {
     if (currentCell) {
@@ -308,16 +339,49 @@ export default function AttendanceExcel() {
   };
 
   const clearAll = () => {
-    setAttendanceData({});
+    const daysInMonth = getDaysInMonth();
+    setAttendanceData(prev => {
+      const newData: Record<string, string> = {};
+      filteredEmployees.forEach(emp => {
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const key = `${emp.id}_${dateStr}`;
+          if (prev[key]) newData[key] = '';
+        }
+      });
+      return newData;
+    });
   };
 
-  const autoFillWeeklyOffs = () => {
+  const autoFillWeeklyOffs = async () => {
+    // BUG FIX: Re-fetch employees to get the latest weekly_off values
+    // (prevents stale data after changing weekly off on Employees page)
+    let currentEmployees = employees;
+    try {
+      const freshData = await employeeAPI.getAll({ is_active: true });
+      if (Array.isArray(freshData)) {
+        setEmployees(freshData);
+        currentEmployees = freshData;
+      }
+    } catch {
+      // Continue with existing data if fetch fails
+    }
+
     const daysInMonth = getDaysInMonth();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const toFill: Record<string, string> = {};
 
-    filteredEmployees.forEach(emp => {
-      const weeklyOff = emp.weekly_off || 'Sunday';
+    // Use fresh employees list (re-filter after fetch)
+    const freshFiltered = currentEmployees.filter(emp => {
+      const search = searchQuery.toLowerCase().trim();
+      if (search && !emp.name.toLowerCase().includes(search) && !emp.department?.toLowerCase().includes(search)) return false;
+      if (departmentFilter && emp.department !== departmentFilter) return false;
+      return true;
+    });
+
+    freshFiltered.forEach(emp => {
+      const weeklyOff = emp.weekly_off;
+      if (!weeklyOff || weeklyOff === 'None') return; // skip employees with no weekly off
       for (let day = 1; day <= daysInMonth; day++) {
         const date = new Date(currentYear, currentMonth, day);
         const dayName = dayNames[date.getDay()];
@@ -393,8 +457,8 @@ export default function AttendanceExcel() {
       Object.entries(attendanceData).forEach(([key, status]) => {
         const date = key.slice(-10);
         const empId = key.slice(0, key.length - 11);
-        if (empId && date && status) {
-          records.push({ employee_id: empId, date, status });
+        if (empId && date) {
+          records.push({ employee_id: empId, date, status: status || '' });
         }
       });
 
@@ -685,74 +749,78 @@ export default function AttendanceExcel() {
             ))}
           </tbody>
         </table>
+      </div>
 
-        {/* Status Popup */}
-        {showPopup && (
-          <>
-            <div 
-              className="fixed inset-0 z-40" 
-              onClick={() => setShowPopup(false)}
-            />
+      {/* Status Popup — outside tableContainerRef so position:fixed works with viewport */}
+      {showPopup && (
+        <>
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setShowPopup(false)}
+          />
+          <div
+            className="fixed z-50 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl shadow-2xl overflow-hidden min-w-[220px] backdrop-blur-2xl animate-fade-in"
+            style={{ 
+              left: popupPosition.x,
+              top: popupPosition.y 
+            }}
+          >
             <div
-              className="absolute z-50 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl shadow-2xl overflow-hidden min-w-[220px] backdrop-blur-2xl animate-fade-in"
-              style={{ 
-                left: Math.min(popupPosition.x, (tableContainerRef.current?.clientWidth || 800) - 240),
-                top: popupPosition.y 
-              }}
+              className="bg-[var(--bg-secondary)] px-4 py-3 text-xs font-black text-[var(--text-primary)] border-b border-[var(--border-primary)] tracking-wide flex items-center justify-between select-none"
+              onMouseDown={handlePopupDragStart}
+              style={{ cursor: popupDragging ? 'grabbing' : 'grab' }}
             >
-              <div className="bg-[var(--bg-secondary)] px-4 py-3 text-xs font-black text-[var(--text-primary)] border-b border-[var(--border-primary)] tracking-wide flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span>Select Status / स्थिति चुनें</span>
-                  <span className="text-[9px] font-bold text-[var(--text-secondary)] opacity-70 mt-0.5">
-                    P=Present A=Absent C=CL L=PL H=HCL W=WO ↑↓ Enter Esc
-                  </span>
-                </div>
-                <button onClick={() => setShowPopup(false)} className="text-[var(--text-secondary)] hover:text-red-500 p-0.5 cursor-pointer">
-                  <X className="w-4 h-4" />
-                </button>
+              <div className="flex flex-col">
+                <span>Select Status / स्थिति चुनें</span>
+                <span className="text-[9px] font-bold text-[var(--text-secondary)] opacity-70 mt-0.5">
+                  P=Present A=Absent C=CL L=PL H=HCL W=WO ↑↓ Enter Esc
+                </span>
               </div>
-              <div className="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-[var(--border-primary)]">
-                {Object.entries(STATUS_CONFIG).map(([code, config]) => {
-                  const shortcutMap: Record<string, string> = {
-                    P:'P', A:'A', CL:'C', PL:'L', HCL:'H', WO:'W', OD:'O', HD:'D', LWP:'X'
-                  };
-                  return (
-                    <button
-                      key={code}
-                      data-status-btn
-                      onClick={() => handleStatusSelect(code)}
-                      className="w-full flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-tertiary)] focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors cursor-pointer text-left font-bold"
-                    >
-                      <div 
-                        className="w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-black flex-shrink-0 shadow-sm font-mono"
-                        style={{ background: config.bg, borderColor: config.text, color: config.text }}
-                      >
-                        {code}
-                      </div>
-                      <div className="flex flex-col flex-1">
-                        <div className="text-[var(--text-primary)] text-xs font-black">{config.nameHi}</div>
-                        <div className="text-[var(--text-secondary)] text-[10px] font-black opacity-80 uppercase tracking-tight font-mono">{config.name}</div>
-                      </div>
-                      {shortcutMap[code] && (
-                        <span className="text-[9px] font-black font-mono px-1.5 py-0.5 bg-[var(--bg-tertiary)] rounded-md text-[var(--text-secondary)] border border-[var(--border-primary)] ml-auto">
-                          {shortcutMap[code]}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <button
-                onClick={clearCell}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border-t border-[var(--border-primary)] font-black text-xs uppercase tracking-widest cursor-pointer"
-              >
+              <button onClick={() => setShowPopup(false)} className="text-[var(--text-secondary)] hover:text-red-500 p-0.5 cursor-pointer">
                 <X className="w-4 h-4" />
-                <span>Clear / हटाएं</span>
               </button>
             </div>
-          </>
-        )}
-      </div>
+            <div className="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-[var(--border-primary)]">
+              {Object.entries(STATUS_CONFIG).map(([code, config]) => {
+                const shortcutMap: Record<string, string> = {
+                  P:'P', A:'A', CL:'C', PL:'L', HCL:'H', WO:'W', OD:'O', HD:'D', LWP:'X'
+                };
+                return (
+                  <button
+                    key={code}
+                    data-status-btn
+                    onClick={() => handleStatusSelect(code)}
+                    className="w-full flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-tertiary)] focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors cursor-pointer text-left font-bold"
+                  >
+                    <div 
+                      className="w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-black flex-shrink-0 shadow-sm font-mono"
+                      style={{ background: config.bg, borderColor: config.text, color: config.text }}
+                    >
+                      {code}
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <div className="text-[var(--text-primary)] text-xs font-black">{config.nameHi}</div>
+                      <div className="text-[var(--text-secondary)] text-[10px] font-black opacity-80 uppercase tracking-tight font-mono">{config.name}</div>
+                    </div>
+                    {shortcutMap[code] && (
+                      <span className="text-[9px] font-black font-mono px-1.5 py-0.5 bg-[var(--bg-tertiary)] rounded-md text-[var(--text-secondary)] border border-[var(--border-primary)] ml-auto">
+                        {shortcutMap[code]}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={clearCell}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border-t border-[var(--border-primary)] font-black text-xs uppercase tracking-widest cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+              <span>Clear / हटाएं</span>
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Pagination */}
       <div className="flex items-center justify-between bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl p-5 shadow-lg backdrop-blur-md font-bold">
@@ -769,26 +837,32 @@ export default function AttendanceExcel() {
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-1.5 font-mono">
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let pageNum = currentPage - 2 + i;
-              if (pageNum < 1) pageNum = i + 1;
-              if (pageNum > totalPages) pageNum = totalPages - (4 - i);
-              if (pageNum < 1) return null;
-              
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={`w-10 h-10 rounded-xl font-black transition-all cursor-pointer shadow-sm text-sm ${
-                    currentPage === pageNum 
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' 
-                      : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-primary)] hover:bg-[var(--bg-tertiary)]'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
+            {(() => {
+              if (totalPages === 0) return null;
+              const maxPages = 5;
+              let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+              let endPage = startPage + maxPages - 1;
+              if (endPage > totalPages) {
+                endPage = totalPages;
+                startPage = Math.max(1, endPage - maxPages + 1);
+              }
+              return Array.from({ length: endPage - startPage + 1 }, (_, i) => {
+                const pageNum = startPage + i;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-10 h-10 rounded-xl font-black transition-all cursor-pointer shadow-sm text-sm ${
+                      currentPage === pageNum 
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' 
+                        : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-primary)] hover:bg-[var(--bg-tertiary)]'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              });
+            })()}
           </div>
           <button
             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}

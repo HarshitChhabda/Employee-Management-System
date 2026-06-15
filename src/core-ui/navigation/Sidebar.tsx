@@ -21,11 +21,8 @@ import {
   PlusCircle,
   Settings,
   Calculator,
-  LogOut,
-  AlertTriangle,
   Building2,
-  UserCircle2,
-  Package
+  UserCircle2
 } from 'lucide-react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useConnectivity } from '@/lib/ConnectivityContext';
@@ -103,11 +100,9 @@ function getUserAvatarGradient(session: any) {
 export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const { t, language } = useLanguage();
   const { isOnline } = useConnectivity();
-  const { session, logout } = useAuthStore();
+  const { session } = useAuthStore();
   const [employeeCount, setEmployeeCount] = useState<number>(0);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [cloudConnected, setCloudConnected] = useState<boolean>(false);
-  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
   const [allowedPages, setAllowedPages] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -145,33 +140,10 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     checkCloud();
     const cloudInterval = setInterval(checkCloud, 15000);
 
-    const checkForUpdates = async () => {
-      if (window.electronAPI?.updater) {
-        try {
-          const res = await window.electronAPI.updater.getStatus() as any;
-          if (res && res.updateAvailable) {
-            setUpdateAvailable(true);
-          }
-        } catch (e) { /* ignore */ }
-      }
-    };
-    checkForUpdates();
-    const updateInterval = setInterval(checkForUpdates, 120000);
-
     return () => {
       clearInterval(cloudInterval);
-      clearInterval(updateInterval);
     };
   }, [session]);
-
-  const handleLogoutClick = () => {
-    setShowLogoutConfirm(true);
-  };
-
-  const handleLogoutConfirm = async () => {
-    setShowLogoutConfirm(false);
-    await logout();
-  };
 
   const filteredNavGroups = navGroups.map(group => {
     const items = group.items.filter(item => {
@@ -196,51 +168,6 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     >
       {/* Ambient Glow */}
       <div className="absolute top-[-50px] left-[-50px] w-[180px] h-[180px] rounded-full bg-blue-500/5 blur-[50px] pointer-events-none z-0" />
-
-      {/* Brand Section */}
-      <div className="px-5 py-5 flex items-center gap-3 relative z-10 select-none border-b border-[var(--border-primary)]/50">
-        <div className="relative flex-shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/15 hover:shadow-blue-500/25 transition-all duration-300 cursor-pointer">
-            <Cpu size={20} strokeWidth={2.5} />
-          </div>
-          <div 
-            className={cn(
-              "absolute -top-1 -right-1 w-3 h-3 border-2 border-[var(--bg-card)] rounded-full transition-all",
-              isOnline 
-                ? "bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]" 
-                : "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"
-            )}
-          />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col min-w-0 transition-all duration-300">
-            <span className="font-black tracking-tight text-[var(--text-primary)] uppercase leading-none text-[13px]">HRMS PRO MAX</span>
-            <span className="text-[7px] font-bold text-blue-500/80 uppercase tracking-[0.2em] mt-1 font-mono">Enterprise Platform</span>
-          </div>
-        )}
-      </div>
-
-      {/* User Profile Card */}
-      {!collapsed && session && (
-        <div className="px-4 py-3 border-b border-[var(--border-primary)]/50 bg-gradient-to-r from-[var(--bg-secondary)]/80 to-transparent relative z-10">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white text-[11px] font-black shadow-md flex-shrink-0 uppercase",
-              avatarGradient
-            )}>
-              {userInitials}
-            </div>
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="font-black text-[12px] text-[var(--text-primary)] truncate leading-tight">
-                {userDisplayName}
-              </span>
-              <span className="text-[8px] font-bold text-blue-500/90 uppercase tracking-wider font-mono mt-0.5">
-                {userRoleLabel}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Navigation */}
       <nav className="flex-grow overflow-y-auto custom-scrollbar px-3 py-4 space-y-6 relative z-10">
@@ -290,16 +217,6 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                         )}>
                           {employeeCount}
                         </span>
-                      )}
-                      {item.path === '/settings' && updateAvailable && (
-                        collapsed ? (
-                          <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse border-2 border-[var(--bg-card)]" />
-                        ) : (
-                          <span className="relative z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-bold font-mono bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            <Package className="w-2.5 h-2.5" />
-                            {language === 'hi' ? 'अपडेट' : 'UPDATE'}
-                          </span>
-                        )
                       )}
                     </>
                   )}
@@ -354,83 +271,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             )}
           </div>
         </div>
-
-        {/* Logout */}
-        {!collapsed && session && (
-          <div className="px-3 pb-3">
-            <button
-              onClick={handleLogoutClick}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 hover:border-red-500/20 text-red-500 hover:text-red-400 transition-all font-semibold text-[10px] uppercase tracking-wider cursor-pointer"
-            >
-              <LogOut size={12} />
-              {language === 'hi' ? 'लॉगआउट' : 'Logout'}
-            </button>
-          </div>
-        )}
-
-        {collapsed && session && (
-          <div className="p-2 flex justify-center border-t border-[var(--border-primary)]/30">
-            <button
-              onClick={handleLogoutClick}
-              aria-label="Logout"
-              className="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-500 flex items-center justify-center transition-all cursor-pointer"
-              title="Logout"
-            >
-              <LogOut size={13} />
-            </button>
-          </div>
-        )}
       </div>
-
-      {/* Collapse Toggle */}
-      <button
-        onClick={onToggle}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="absolute bottom-[120px] -right-2.5 w-5 h-10 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-full flex items-center justify-center text-[var(--text-secondary)] hover:text-blue-500 hover:border-blue-500/50 transition-all shadow-lg z-50 group backdrop-blur-md cursor-pointer"
-      >
-        {collapsed ? <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" /> : <ChevronLeft size={10} className="group-hover:-translate-x-0.5 transition-transform" />}
-      </button>
-
-      {/* Logout Modal */}
-      {showLogoutConfirm && (
-        <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-scale-up">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center text-red-500">
-                <AlertTriangle size={20} />
-              </div>
-              <div>
-                <h3 className="font-black text-sm text-[var(--text-primary)] uppercase tracking-wide">
-                  {language === 'hi' ? 'लॉगआउट की पुष्टि करें' : 'Confirm Logout'}
-                </h3>
-                <p className="text-[8px] font-bold text-[var(--text-secondary)] font-mono uppercase tracking-widest mt-0.5">
-                  {language === 'hi' ? 'सत्र समाप्त किया जाएगा' : 'Session will be terminated'}
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-[var(--text-secondary)] font-bold mb-6">
-              {language === 'hi' 
-                ? 'क्या आप वाकई लॉगआउट करना चाहते हैं? आपको पुनः लॉगिन करना होगा।'
-                : 'Are you sure you want to logout? You will need to sign in again.'}
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 py-2.5 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)] font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95"
-              >
-                {language === 'hi' ? 'रद्द करें' : 'Cancel'}
-              </button>
-              <button
-                onClick={handleLogoutConfirm}
-                className="flex-1 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-500/15 cursor-pointer active:scale-95 flex items-center justify-center gap-2"
-              >
-                <LogOut size={12} />
-                {language === 'hi' ? 'लॉगआउट' : 'Logout'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useState, Fragment, useRef } from 'react';
 import {
   Users,
   Plus,
@@ -19,6 +19,7 @@ import {
   Eye,
   Printer,
   Download,
+  Upload,
 } from 'lucide-react';
 import { hindiLabels, categories } from '../lib/hindiLabels';
 import { getCategoryLabel, getCategoryColor } from '../lib/categoryUtils';
@@ -27,6 +28,7 @@ import { useToast } from '../components/Toast';
 import { employeeAPI, masterAPI, tenureAPI, resignedAPI } from '../services/api';
 import type { Employee as EmployeeType } from '../types/hrms';
 import * as XLSX from 'xlsx';
+import toUnicode from '@anthro-ai/krutidev-unicode';
 
 interface Employee extends EmployeeType {
   category_history?: Array<{
@@ -40,13 +42,51 @@ interface Employee extends EmployeeType {
 
 type WeeklyOffDay = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
 
+interface ImportBatch {
+  id: string;
+  fileName: string;
+  date: string;
+  count: number;
+  employeeIds: string[];
+}
+
+const IMPORT_BATCHES_KEY = 'employee_import_batches';
+
+const getImportBatches = (): ImportBatch[] => {
+  try {
+    const data = localStorage.getItem(IMPORT_BATCHES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+};
+
+const saveImportBatch = (batch: ImportBatch) => {
+  const batches = getImportBatches();
+  batches.unshift(batch);
+  localStorage.setItem(IMPORT_BATCHES_KEY, JSON.stringify(batches));
+};
+
+const removeImportBatch = (id: string) => {
+  const batches = getImportBatches().filter(b => b.id !== id);
+  localStorage.setItem(IMPORT_BATCHES_KEY, JSON.stringify(batches));
+};
+
 export default function Employees() {
   const { showToast } = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [isDevLys, setIsDevLys] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; errors: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportHistory, setShowImportHistory] = useState(false);
+  const [importBatches, setImportBatches] = useState<ImportBatch[]>(getImportBatches());
+  const [deletingBatch, setDeletingBatch] = useState<ImportBatch | null>(null);
   const [showHistory, setShowHistory] = useState<string | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [formData, setFormData] = useState<Partial<Employee> & { category_change_reason?: string }>({});
@@ -69,6 +109,25 @@ export default function Employees() {
   const [resignEmployee, setResignEmployee] = useState<Employee | null>(null);
   const [resignData, setResignData] = useState({ reason: '', resign_date: new Date().toISOString().split('T')[0] });
   const [showReportModal, setShowReportModal] = useState(false);
+  const [empPage, setEmpPage] = useState(1);
+  const [empShowAll, setEmpShowAll] = useState(false);
+  const EMP_PAGE_SIZE = 25;
+
+  const handleDeleteBatch = async () => {
+    if (!deletingBatch) return;
+    let deletedCount = 0;
+    for (const empId of deletingBatch.employeeIds) {
+      try {
+        await employeeAPI.hardDelete(empId);
+        deletedCount++;
+      } catch {}
+    }
+    removeImportBatch(deletingBatch.id);
+    setImportBatches(getImportBatches());
+    setDeletingBatch(null);
+    showToast(`${deletedCount} imported employees permanently deleted / ${deletedCount} आयात किए गए कर्मचारी स्थायी रूप से हटाए गए`, 'success');
+    fetchEmployees();
+  };
 
   const handleSelectPhoto = async (e?: React.ChangeEvent<HTMLInputElement>) => {
     if (e && e.target.files && e.target.files[0]) {
@@ -107,8 +166,8 @@ export default function Employees() {
   const fetchMasters = async () => {
     try {
       const data = await masterAPI.getAll();
-      setMasterDepartments(data.departments || []);
-      setMasterDesignations(data.designations || []);
+      setMasterDepartments(data?.departments || []);
+      setMasterDesignations(data?.designations || []);
     } catch (err) {
       console.error('Error fetching masters:', err);
     }
@@ -121,8 +180,10 @@ export default function Employees() {
   }, []);
 
   useEffect(() => {
+    setEmpPage(1);
+    setEmpShowAll(false);
     fetchEmployees();
-  }, [searchQuery, categoryFilter]);
+  }, [searchQuery, categoryFilter, departmentFilter, designationFilter]);
 
   const openRenewalModal = async (employee: Employee) => {
     setRenewalEmployee(employee);
@@ -173,7 +234,18 @@ export default function Employees() {
       if (categoryFilter) params.category = categoryFilter;
 
       const data = await employeeAPI.getAll(params);
-      setEmployees(Array.isArray(data) ? data : []);
+      let filtered = Array.isArray(data) ? data : [];
+
+      if (departmentFilter) {
+        filtered = filtered.filter(e => e.department === departmentFilter);
+      }
+      if (designationFilter) {
+        filtered = filtered.filter(e => e.designation === designationFilter);
+      }
+
+      filtered.sort((a, b) => (a.employee_code || '').localeCompare(b.employee_code || '', undefined, { numeric: true }));
+
+      setEmployees(filtered);
     } catch (err) {
       console.error('Fetch error:', err);
       showToast('Failed to load employees / कर्मचारी लोड करने में विफल', 'error');
@@ -241,7 +313,8 @@ export default function Employees() {
       is_active: 1,
       category: 'daily_wage',
       joining_date: new Date().toISOString().split('T')[0],
-      title: 'Shri'
+      title: 'Shri',
+      weekly_off: 'None'
     });
     setActiveTab('basic');
     setShowModal(true);
@@ -406,6 +479,367 @@ export default function Employees() {
     URL.revokeObjectURL(url);
   };
 
+  const formatDateDisplay = (isoDate: string): string => {
+    if (!isoDate) return '';
+    const parts = isoDate.split('-');
+    if (parts.length === 1 && parts[0].length === 4) return parts[0];
+    if (parts.length !== 3) return isoDate;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  };
+
+  const parseDateInput = (displayDate: string): string => {
+    if (!displayDate) return '';
+    const parts = displayDate.split('/');
+    if (parts.length === 1 && parts[0].length === 4) return parts[0];
+    if (parts.length !== 3) return '';
+    const [dd, mm, yyyy] = parts;
+    if (!dd || !mm || !yyyy || yyyy.length !== 4) return '';
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  };
+
+  const DateInput = ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) => {
+    const [display, setDisplay] = useState(formatDateDisplay(value));
+    const [focused, setFocused] = useState(false);
+
+    useEffect(() => {
+      if (!focused) setDisplay(formatDateDisplay(value));
+    }, [value, focused]);
+
+    return (
+      <input
+        type="text"
+        placeholder="dd/mm/yyyy or yyyy"
+        value={display}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false);
+          const parsed = parseDateInput(display);
+          if (parsed || !display) onChange(parsed);
+        }}
+        onChange={(e) => {
+          let val = e.target.value.replace(/[^\d/]/g, '');
+          
+          // Only auto-format slashes if the user types more than 4 digits (so they can just type a year)
+          if (val.length > 4 && !val.includes('/')) {
+              val = val.slice(0, 2) + '/' + val.slice(2);
+          }
+          if (val.length > 5 && val.indexOf('/') === 2 && val.lastIndexOf('/') === 2) {
+              val = val.slice(0, 5) + '/' + val.slice(5, 9);
+          }
+          if (val.length > 10) val = val.slice(0, 10);
+          setDisplay(val);
+        }}
+        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer font-mono"
+      />
+    );
+  };
+
+  const hindiToFieldMap: Record<string, keyof Employee> = {
+    // Hindi mappings
+    'नाम': 'name',
+    'पिता का नाम': 'fathers_name',
+    'पति का नाम': 'husband_name',
+    'मोबाइल नंबर': 'mobile_number',
+    'फोन': 'mobile_number',
+    'ईमेल': 'email',
+    'पता': 'address',
+    'आधार नंबर': 'aadhar_number',
+    'आधार': 'aadhar_number',
+    'आधार नम्बर': 'aadhar_number',
+    'पैन नंबर': 'pan_number',
+    'पैन': 'pan_number',
+    'पीएफ नंबर': 'pf_number',
+    'ईपीएफ यूएएन': 'epf_uan_number',
+    'बैंक का नाम': 'bank_name',
+    'बैंक': 'bank_name',
+    'खाता संख्या': 'account_number',
+    'आईएफएससी कोड': 'ifsc_code',
+    'श्रेणी': 'category',
+    'विभाग': 'department',
+    'कार्यरत स्थान': 'department',
+    'पदनाम': 'designation',
+    'पद': 'designation',
+    'कर्मचारी कोड': 'employee_code',
+    'मूल वेतन': 'basic_salary',
+    'वेतन': 'basic_salary',
+    'वर्तमान वेतन': 'basic_salary',
+    'शीर्षक': 'title',
+    'रक्त समूह': 'blood_group',
+    'योग्यता': 'qualification',
+    'साप्ताहिक अवकाश': 'weekly_off',
+    'सेवा अवधि': 'service_duration',
+    'नियुक्ति आदेश संख्या': 'appointment_order_number',
+    'जन्म दिनांक': 'dob',
+    'नियुक्ति दिनांक': 'joining_date',
+    
+    // English mappings
+    'name': 'name',
+    'first name': 'name',
+    'fathers name': 'fathers_name',
+    'father name': 'fathers_name',
+    'husband name': 'husband_name',
+    'mobile': 'mobile_number',
+    'mobile number': 'mobile_number',
+    'phone': 'mobile_number',
+    'email': 'email',
+    'address': 'address',
+    'aadhar': 'aadhar_number',
+    'aadhar number': 'aadhar_number',
+    'pan': 'pan_number',
+    'pan number': 'pan_number',
+    'pf number': 'pf_number',
+    'epf uan': 'epf_uan_number',
+    'bank name': 'bank_name',
+    'account number': 'account_number',
+    'ifsc': 'ifsc_code',
+    'ifsc code': 'ifsc_code',
+    'category': 'category',
+    'department': 'department',
+    'designation': 'designation',
+    'employee code': 'employee_code',
+    'emp code': 'employee_code',
+    'basic salary': 'basic_salary',
+    'salary': 'basic_salary',
+    'title': 'title',
+    'blood group': 'blood_group',
+    'qualification': 'qualification',
+    'weekly off': 'weekly_off',
+    'joining date': 'joining_date',
+    'dob': 'dob',
+    'date of birth': 'dob',
+    'tenure end date': 'tenure_end_date',
+  };
+
+  const parseExcelDate = (val: any): string => {
+    if (!val) return '';
+    if (typeof val === 'number') {
+      if (val >= 1900 && val <= 2100) return String(val);
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const d = new Date(excelEpoch.getTime() + Math.round(val * 86400000));
+      return d.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (/^\d{4}$/.test(str)) return str;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const ddmmyyyy = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (ddmmyyyy) {
+      return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+    }
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    } catch {}
+    return '';
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+
+      if (rows.length === 0) {
+        setImportResult({ success: 0, errors: ['Excel file is empty / Excel फ़ाइल खाली है'] });
+        return;
+      }
+
+      const headerRow = rows[0];
+      const headers = Object.keys(headerRow);
+
+      const fieldMapping: Record<string, keyof Employee> = {};
+      headers.forEach(h => {
+        let trimmed = h.trim();
+        if (isDevLys) {
+          try {
+            trimmed = toUnicode(trimmed).trim();
+          } catch (e) {
+            // fallback if toUnicode fails
+          }
+        }
+        const lowerTrimmed = trimmed.toLowerCase();
+        if (hindiToFieldMap[trimmed]) {
+          fieldMapping[h] = hindiToFieldMap[trimmed];
+        } else if (hindiToFieldMap[lowerTrimmed]) {
+          fieldMapping[h] = hindiToFieldMap[lowerTrimmed];
+        } else if (lowerTrimmed === 'category') {
+          fieldMapping[h] = 'category';
+        }
+      });
+
+      let successCount = 0;
+      const errors: string[] = [];
+      const importedIds: string[] = [];
+      const importedDepartments = new Set<string>();
+      const importedDesignations = new Set<string>();
+
+      let allExistingEmployees: Employee[] = [];
+      try {
+        const res = await employeeAPI.getAll();
+        allExistingEmployees = Array.isArray(res) ? res : [];
+      } catch (e) {
+        console.warn('Could not fetch existing employees for deduplication', e);
+      }
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const empData: Record<string, any> = {};
+
+        Object.entries(fieldMapping).forEach(([excelHeader, field]) => {
+          let val = row[excelHeader];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            const hindiFields = ['name', 'fathers_name', 'husband_name', 'address', 'bank_name', 'department', 'designation', 'title', 'category', 'dob', 'joining_date', 'tenure_end_date', 'appointment_date', 'basic_salary'];
+            if (isDevLys && typeof val === 'string' && hindiFields.includes(field)) {
+              const hasHindiUnicode = /[\u0900-\u097F]/.test(val);
+              if (!hasHindiUnicode) {
+                try {
+                  val = toUnicode(val);
+                } catch (e) {
+                  // Ignore conversion errors
+                }
+              }
+            }
+            if (field === 'dob' || field === 'joining_date' || field === 'tenure_end_date' || field === 'appointment_date') {
+              val = parseExcelDate(val);
+            }
+            empData[field] = String(val).trim();
+          }
+        });
+
+        if (!empData.name) {
+          errors.push(`Row ${i + 2}: नाम (Name) आवश्यक है`);
+          continue;
+        }
+
+        // Duplicate Check
+        const isDuplicate = allExistingEmployees.some(existing => {
+          if (empData.aadhar_number && existing.aadhar_number && String(empData.aadhar_number).trim() === String(existing.aadhar_number).trim()) {
+            return true;
+          }
+          const nameMatch = existing.name?.trim().toLowerCase() === empData.name?.trim().toLowerCase();
+          const deptMatch = existing.department?.trim().toLowerCase() === empData.department?.trim().toLowerCase();
+          
+          if (nameMatch && deptMatch) {
+            if (empData.dob && existing.dob && empData.dob === existing.dob) return true;
+            if (!empData.dob) return true;
+          }
+          return false;
+        });
+
+        if (isDuplicate) {
+          errors.push(`Row ${i + 2}: ${empData.name} (Duplicate Skipped / डुप्लीकेट एंट्री)`);
+          continue;
+        }
+
+        empData.employee_code = empData.employee_code || `Emp${String(successCount + employees.length + 1).padStart(4, '0')}`;
+        
+        // Ensure category is lowercase if provided in english, otherwise default to permanent if not found since user specifically wants permanent, but fallback to daily_wage usually.
+        // Wait, better to normalize:
+        if (empData.category && typeof empData.category === 'string') {
+          const catLower = empData.category.toLowerCase();
+          if (catLower === 'permanent' || catLower === 'स्थायी') {
+            empData.category = 'permanent';
+          } else if (catLower === 'contract' || catLower === 'अनुबंध') {
+            empData.category = 'contract';
+          } else {
+            empData.category = 'daily_wage';
+          }
+        } else {
+          // Defaulting to permanent as user seems to be importing permanent employees 
+          // or we can stick to daily_wage but handle it gracefully.
+          empData.category = 'permanent'; // changed default to permanent
+        }
+
+        empData.is_active = 1;
+        if (!empData.joining_date) {
+          empData.joining_date = new Date().toISOString().split('T')[0];
+        }
+
+        try {
+          const created = await employeeAPI.create(empData);
+          if (created && (created as any).id) importedIds.push((created as any).id);
+          successCount++;
+
+          if (empData.department) importedDepartments.add(empData.department);
+          if (empData.designation) importedDesignations.add(empData.designation);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unknown error';
+          errors.push(`Row ${i + 2} (${empData.name}): ${msg}`);
+        }
+      }
+
+      setImportResult({ success: successCount, errors });
+      if (successCount > 0) {
+        // Sync with masters
+        let latestDepts = masterDepartments;
+        let latestDesigs = masterDesignations;
+        try {
+          const mData = await masterAPI.getAll();
+          latestDepts = mData?.departments || masterDepartments;
+          latestDesigs = mData?.designations || masterDesignations;
+        } catch (e) {}
+
+        const existingDepts = new Set(latestDepts.map(d => d.name.toLowerCase().trim()));
+        const existingDesigs = new Set(latestDesigs.map(d => d.name.toLowerCase().trim()));
+        let mastersAdded = false;
+
+        for (const dept of importedDepartments) {
+          const cleanDept = dept.trim();
+          if (cleanDept && !existingDepts.has(cleanDept.toLowerCase())) {
+            try { 
+              await masterAPI.createDepartment(cleanDept); 
+              existingDepts.add(cleanDept.toLowerCase());
+              mastersAdded = true; 
+            } catch(e) {}
+          }
+        }
+        for (const desig of importedDesignations) {
+          const cleanDesig = desig.trim();
+          if (cleanDesig && !existingDesigs.has(cleanDesig.toLowerCase())) {
+            try { 
+              await masterAPI.createDesignation(cleanDesig); 
+              existingDesigs.add(cleanDesig.toLowerCase());
+              mastersAdded = true; 
+            } catch(e) {}
+          }
+        }
+
+        if (mastersAdded) {
+          fetchMasters();
+          window.dispatchEvent(new Event('mastersUpdated'));
+        }
+        const batch: ImportBatch = {
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          fileName: file.name,
+          date: new Date().toISOString(),
+          count: successCount,
+          employeeIds: importedIds,
+        };
+        saveImportBatch(batch);
+        setImportBatches(getImportBatches());
+        showToast(`${successCount} employees imported / ${successCount} कर्मचारी आयात किए गए`, 'success');
+        fetchEmployees();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to read Excel file';
+      setImportResult({ success: 0, errors: [msg] });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="space-y-6 font-sans animate-fade-in">
       {/* Header */}
@@ -422,6 +856,40 @@ export default function Employees() {
             <Eye className="w-5 h-5 flex-shrink-0" />
             <span>View Report</span>
           </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-90 text-white rounded-xl transition-all font-black shadow-lg shadow-amber-500/20 cursor-pointer text-sm disabled:opacity-50"
+          >
+            {importing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Upload className="w-5 h-5 flex-shrink-0" />}
+            <span>{importing ? 'Importing...' : 'Import Excel'}</span>
+          </button>
+          <button
+            onClick={() => { setImportBatches(getImportBatches()); setShowImportHistory(true); }}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 hover:opacity-90 text-white rounded-xl transition-all font-black shadow-lg shadow-red-500/20 cursor-pointer text-sm"
+          >
+            <Trash2 className="w-5 h-5 flex-shrink-0" />
+            <span>Import History</span>
+          </button>
+          <div className="flex items-center gap-2 bg-[var(--bg-secondary)] px-3 py-2.5 rounded-xl border border-[var(--border-primary)]">
+            <input
+              type="checkbox"
+              id="devlysCheck"
+              checked={isDevLys}
+              onChange={(e) => setIsDevLys(e.target.checked)}
+              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 bg-[var(--bg-card)] border-[var(--border-primary)]"
+            />
+            <label htmlFor="devlysCheck" className="text-xs font-bold text-[var(--text-secondary)] whitespace-nowrap cursor-pointer select-none">
+              DevLys 010 Font
+            </label>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportExcel}
+            className="hidden"
+          />
           <button
             onClick={openAddModal}
             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:opacity-90 text-white rounded-xl transition-all font-black shadow-lg shadow-blue-500/20 cursor-pointer text-sm"
@@ -440,7 +908,7 @@ export default function Employees() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="कर्मचारी खोजें (Name, Code, Dept...)"
+            placeholder="कर्मचारी खोजें (Name, Code, Joining Date)"
             className="w-full pl-12 pr-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-blue-500 focus:outline-none font-bold text-xs shadow-sm"
           />
         </div>
@@ -457,57 +925,91 @@ export default function Employees() {
             ))}
           </select>
         </div>
+        <div className="relative">
+          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="pl-12 pr-10 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none appearance-none cursor-pointer min-w-[200px] font-bold text-xs shadow-sm"
+          >
+            <option value="">सभी विभाग (All Departments)</option>
+            {masterDepartments.map(d => (
+              <option key={d.id} value={d.name}>{d.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="relative">
+          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
+          <select
+            value={designationFilter}
+            onChange={(e) => setDesignationFilter(e.target.value)}
+            className="pl-12 pr-10 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none appearance-none cursor-pointer min-w-[200px] font-bold text-xs shadow-sm"
+          >
+            <option value="">सभी पदनाम (All Designations)</option>
+            {masterDesignations.map(d => (
+              <option key={d.id} value={d.name}>{d.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Employee Table */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-[var(--bg-secondary)] border-b border-[var(--border-primary)]">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.name}</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.employeeCode}</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.department}</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.category}</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.joiningDate}</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.actions}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border-primary)] text-[var(--text-primary)] font-medium">
-              {loading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td className="px-6 py-4">
-                      <div className="space-y-2">
-                        <div className="h-4 bg-[var(--bg-secondary)] rounded w-32" />
-                        <div className="h-3 bg-[var(--bg-secondary)] rounded w-24" />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-16" /></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-20" /></td>
-                    <td className="px-6 py-4"><div className="h-6 bg-[var(--bg-secondary)] rounded-full w-24" /></td>
-                    <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-20" /></td>
-                    <td className="px-6 py-4"><div className="flex gap-2">{[...Array(5)].map((_, j) => <div key={j} className="w-8 h-8 bg-[var(--bg-secondary)] rounded-xl" />)}</div></td>
+      {(() => {
+        const empTotal = employees.length;
+        const empTotalPages = Math.max(1, Math.ceil(empTotal / EMP_PAGE_SIZE));
+        const safeEmpPage = empShowAll ? 1 : Math.min(empPage, empTotalPages);
+        const empStart = empShowAll ? 0 : (safeEmpPage - 1) * EMP_PAGE_SIZE;
+        const pagedEmployees = empShowAll ? employees : employees.slice(empStart, empStart + EMP_PAGE_SIZE);
+        return (
+          <>
+          <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl overflow-hidden shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-[var(--bg-secondary)] border-b border-[var(--border-primary)]">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.name}</th>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.employeeCode}</th>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.department}</th>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.category}</th>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.joiningDate}</th>
+                    <th className="px-6 py-4 text-left text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider font-mono">{hindiLabels.actions}</th>
                   </tr>
-                ))
-              ) : employees.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <Users className="w-12 h-12 text-[var(--text-secondary)] opacity-30" />
-                      <p className="text-[var(--text-secondary)] font-bold text-sm">{hindiLabels.noData}</p>
-                      <button
-                        onClick={openAddModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition-opacity"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add First Employee
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                employees.map((emp) => (
+                </thead>
+                <tbody className="divide-y divide-[var(--border-primary)] text-[var(--text-primary)] font-medium">
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td className="px-6 py-4">
+                          <div className="space-y-2">
+                            <div className="h-4 bg-[var(--bg-secondary)] rounded w-32" />
+                            <div className="h-3 bg-[var(--bg-secondary)] rounded w-24" />
+                          </div>
+                        </td>
+                        <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-16" /></td>
+                        <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-20" /></td>
+                        <td className="px-6 py-4"><div className="h-6 bg-[var(--bg-secondary)] rounded-full w-24" /></td>
+                        <td className="px-6 py-4"><div className="h-4 bg-[var(--bg-secondary)] rounded w-20" /></td>
+                        <td className="px-6 py-4"><div className="flex gap-2">{[...Array(5)].map((_, j) => <div key={j} className="w-8 h-8 bg-[var(--bg-secondary)] rounded-xl" />)}</div></td>
+                      </tr>
+                    ))
+                  ) : pagedEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Users className="w-12 h-12 text-[var(--text-secondary)] opacity-30" />
+                          <p className="text-[var(--text-secondary)] font-bold text-sm">{hindiLabels.noData}</p>
+                          <button
+                            onClick={openAddModal}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition-opacity"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add First Employee
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedEmployees.map((emp) => (
                   <Fragment key={emp.id}>
                     <tr className="hover:bg-[var(--bg-tertiary)] transition-colors">
                       <td className="px-6 py-4">
@@ -532,7 +1034,7 @@ export default function Employees() {
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-[var(--text-primary)] font-mono font-bold text-xs">{emp.joining_date}</td>
+                      <td className="px-6 py-4 text-[var(--text-primary)] font-mono font-bold text-xs">{emp.joining_date ? formatDateDisplay(emp.joining_date) : '-'}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button
@@ -603,7 +1105,57 @@ export default function Employees() {
             </tbody>
           </table>
         </div>
+        {/* Pagination Footer */}
+        {empTotalPages > 1 && (
+          <div className="px-6 py-3 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
+            <span className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest font-mono">
+              {empShowAll ? `Showing all ${empTotal}` : `Showing ${empStart + 1}–${Math.min(empStart + EMP_PAGE_SIZE, empTotal)} of ${empTotal}`}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => { setEmpShowAll(false); setEmpPage(p => Math.max(1, p - 1)); }} disabled={empShowAll || safeEmpPage === 1}
+                className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer">
+                Prev
+              </button>
+              {!empShowAll && Array.from({ length: empTotalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === empTotalPages || Math.abs(p - safeEmpPage) <= 1)
+                .reduce<(number | string)[]>((acc, p, i, arr) => {
+                  if (i > 0 && typeof arr[i - 1] === 'number' && (p as number) - (arr[i - 1] as number) > 1) acc.push('...');
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, i) =>
+                  typeof p === 'string' ? (
+                    <span key={`e${i}`} className="px-1 text-[var(--text-secondary)]">…</span>
+                  ) : (
+                    <button key={p} onClick={() => { setEmpShowAll(false); setEmpPage(p); }}
+                      className={`w-8 h-8 text-[10px] font-black rounded-lg border transition-all cursor-pointer ${
+                        p === safeEmpPage
+                          ? 'bg-[var(--accent-blue)] text-white border-[var(--accent-blue)] shadow-md'
+                          : 'border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                      }`}>
+                      {p}
+                    </button>
+                  )
+                )}
+              <button onClick={() => setEmpShowAll(!empShowAll)}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all cursor-pointer ${
+                  empShowAll
+                    ? 'bg-[var(--accent-blue)] text-white border-[var(--accent-blue)] shadow-md'
+                    : 'border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                }`}>
+                All
+              </button>
+              <button onClick={() => { setEmpShowAll(false); setEmpPage(p => Math.min(empTotalPages, p + 1)); }} disabled={empShowAll || safeEmpPage === empTotalPages}
+                className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border border-[var(--border-primary)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer">
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+          </>
+        );
+      })()}
 
       {/* Modal */}
       {showModal && (
@@ -775,11 +1327,9 @@ export default function Employees() {
 
                     <div>
                       <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.dob} / जन्म तिथि</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={formData.dob || ''}
-                        onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer font-mono"
+                        onChange={(v) => setFormData({ ...formData, dob: v })}
                       />
                     </div>
 
@@ -812,7 +1362,6 @@ export default function Employees() {
                       <label className="block text-xs font-black text-[var(--text-primary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.category} * / श्रेणी (अनिवार्य)</label>
                       <select
                         required
-                        disabled={editingEmployee?.category === 'permanent'}
                         value={formData.category || 'daily_wage'}
                         onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                         className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -821,9 +1370,6 @@ export default function Employees() {
                           <option key={cat.value} value={cat.value}>{cat.label}</option>
                         ))}
                       </select>
-                      {editingEmployee?.category === 'permanent' && (
-                        <p className="text-[10px] text-emerald-500 mt-1.5 flex items-center gap-1 font-black uppercase tracking-wider font-mono bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20 w-fit">🔒 Permanent status locked</p>
-                      )}
                     </div>
 
                     <div>
@@ -873,25 +1419,18 @@ export default function Employees() {
 
                     <div>
                       <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.joiningDate} / ज्वाइनिंग तिथि</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={formData.joining_date || ''}
-                        onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
-                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer font-mono"
+                        onChange={(v) => setFormData({ ...formData, joining_date: v })}
                       />
                     </div>
 
                     <div>
                       <label className={`block text-xs font-black uppercase tracking-wider mb-2 font-mono ${formData.category === 'permanent' ? 'text-blue-500' : 'text-amber-500'
                         }`}>कार्यकाल समाप्ति तिथि (Tenure Expiry)</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={formData.tenure_end_date || ''}
-                        onChange={(e) => setFormData({ ...formData, tenure_end_date: e.target.value })}
-                        className={`w-full px-4 py-3 bg-[var(--bg-secondary)] border rounded-xl text-[var(--text-primary)] text-xs font-bold focus:outline-none shadow-sm cursor-pointer font-mono ${formData.category === 'permanent'
-                          ? 'border-blue-500/40 bg-blue-500/[0.02] focus:border-blue-500'
-                          : 'border-amber-500/40 bg-amber-500/[0.02] focus:border-amber-500'
-                          }`}
+                        onChange={(v) => setFormData({ ...formData, tenure_end_date: v })}
                       />
                     </div>
                   </div>
@@ -1031,8 +1570,8 @@ export default function Employees() {
                     <div>
                       <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.basicSalary} / मूल वेतन</label>
                       <input
-                        type="number"
-                        placeholder="0.00"
+                        type="text"
+                        placeholder="e.g. 10000 or 160/- प्रतिदिन"
                         value={formData.basic_salary || ''}
                         onChange={(e) => setFormData({ ...formData, basic_salary: e.target.value })}
                         className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none font-mono shadow-sm"
@@ -1042,7 +1581,7 @@ export default function Employees() {
                     <div>
                       <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.weeklyOff} / साप्ताहिक अवकाश</label>
                       <select
-                        value={formData.weekly_off || 'Sunday'}
+                        value={formData.weekly_off || 'None'}
                         onChange={handleWeeklyOffChange}
                         className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer"
                       >
@@ -1076,11 +1615,9 @@ export default function Employees() {
 
                     <div>
                       <label className="block text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-2 font-mono">{hindiLabels.appointmentDate} / नियुक्ति तिथि</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={formData.appointment_date || ''}
-                        onChange={(e) => setFormData({ ...formData, appointment_date: e.target.value })}
-                        className="w-full px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] text-xs font-bold focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer font-mono"
+                        onChange={(v) => setFormData({ ...formData, appointment_date: v })}
                       />
                     </div>
 
@@ -1352,6 +1889,56 @@ export default function Employees() {
         </div>
       )}
 
+      {/* Import Result Modal */}
+      {importResult && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-[var(--text-primary)]">
+            <div className="p-6 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${importResult.success > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                  {importResult.success > 0 ? <CheckCircle className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h2 className="text-lg font-black">Import Result / आयात परिणाम</h2>
+                  <p className="text-xs font-bold text-[var(--text-secondary)] font-mono">
+                    {importResult.success > 0 ? `${importResult.success} employees imported` : 'Import failed'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setImportResult(null)} className="text-[var(--text-secondary)] hover:text-red-500 p-2 rounded-xl transition-all cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 max-h-80 overflow-y-auto">
+              {importResult.success > 0 && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                  <p className="text-sm font-black text-emerald-600 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    {importResult.success} कर्मचारी सफलतापूर्वक आयात किए गए
+                  </p>
+                </div>
+              )}
+              {importResult.errors.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-black text-red-500 uppercase tracking-wider font-mono">Errors / त्रुटियां:</p>
+                  {importResult.errors.map((err, i) => (
+                    <p key={i} className="text-xs text-red-400 font-bold bg-red-500/5 p-2 rounded-lg border border-red-500/10">{err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-5 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex justify-end">
+              <button
+                onClick={() => setImportResult(null)}
+                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Report Modal */}
       {showReportModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in print:p-0 print:bg-white print:fixed print:inset-0 print:z-[9999] print:block">
@@ -1460,6 +2047,118 @@ export default function Employees() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Import History Modal */}
+      {showImportHistory && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-[var(--text-primary)]">
+            <div className="p-6 border-b border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center text-red-500">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black">Import History / आयात इतिहास</h2>
+                  <p className="text-xs font-bold text-[var(--text-secondary)] font-mono">Delete any previous Excel import</p>
+                </div>
+              </div>
+              <button onClick={() => setShowImportHistory(false)} className="text-[var(--text-secondary)] hover:text-red-500 p-2 rounded-xl transition-all cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {importBatches.length === 0 ? (
+                <div className="text-center py-12">
+                  <Upload className="w-12 h-12 text-[var(--text-secondary)] opacity-30 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-[var(--text-secondary)]">No imports yet / अभी तक कोई आयात नहीं</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {importBatches.map((batch) => (
+                    <div key={batch.id} className="p-4 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-[var(--text-primary)] truncate">{batch.fileName}</p>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-[10px] font-mono font-bold text-[var(--text-secondary)]">
+                                {new Date(batch.date).toLocaleDateString('en-IN')} {new Date(batch.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                                {batch.count} employees
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setDeletingBatch(batch)}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-5 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex justify-end">
+              <button
+                onClick={() => setShowImportHistory(false)}
+                className="px-5 py-2.5 border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Close / बंद करें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Import Batch Confirmation */}
+      {deletingBatch && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-[var(--text-primary)]">
+            <div className="p-6 border-b border-[var(--border-primary)] bg-red-500/5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center text-red-500">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-red-500">Delete Import / आयात हटाएं</h2>
+                  <p className="text-xs font-bold text-[var(--text-secondary)] font-mono">{deletingBatch.fileName}</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-bold text-[var(--text-primary)]">
+                This will permanently delete <span className="font-black text-red-500">{deletingBatch.count} employees</span> imported from this Excel file.
+              </p>
+              <p className="text-xs font-bold text-[var(--text-secondary)]">
+                यह <span className="font-black text-red-500">{deletingBatch.count} कर्मचारियों</span> को स्थायी रूप से हटा देगा जो इस Excel फ़ाइल से आयात किए गए थे।
+              </p>
+              <p className="text-[10px] font-bold text-red-400 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
+                ⚠ This action cannot be undone / यह क्रिया पूर्ववत नहीं की जा सकती
+              </p>
+            </div>
+            <div className="p-5 border-t border-[var(--border-primary)] bg-[var(--bg-secondary)] flex items-center justify-end gap-3">
+              <button
+                onClick={() => setDeletingBatch(null)}
+                className="px-5 py-2.5 border border-[var(--border-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteBatch}
+                className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-red-500/20 cursor-pointer flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete {deletingBatch.count} Employees
+              </button>
             </div>
           </div>
         </div>

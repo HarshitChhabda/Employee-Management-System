@@ -59,4 +59,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     recovery: () => ipcRenderer.invoke('api:update-manager:recovery'),
     getLogs: () => ipcRenderer.invoke('api:update-manager:logs'),
   },
+
+  // Screen info for responsive layout
+  onScreenInfo: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('screen:info', handler);
+    return () => ipcRenderer.removeListener('screen:info', handler);
+  },
 });

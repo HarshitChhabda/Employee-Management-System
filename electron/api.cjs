@@ -13,6 +13,7 @@ const TRACKED_FIELDS = [
 async function registerApiHandlers(ipcMain, db) {
 
   // Helper: Get effective weekly off for a given employee and date
+  // Returns the day name (e.g. 'Sunday') or 'None' if no weekly off is set
   async function getEffectiveWeeklyOff(employeeId, dateStr) {
     const hist = await db.get(
       `SELECT weekly_off FROM employee_weekly_off_history
@@ -20,14 +21,14 @@ async function registerApiHandlers(ipcMain, db) {
        ORDER BY effective_from DESC, created_at DESC LIMIT 1`,
       [employeeId, dateStr]
     );
-    if (hist && hist.weekly_off) {
+    if (hist && hist.weekly_off && hist.weekly_off !== 'None') {
       return hist.weekly_off;
     }
     const emp = await db.get('SELECT weekly_off FROM employees WHERE id = ?', [employeeId]);
-    if (emp && emp.weekly_off) {
+    if (emp && emp.weekly_off && emp.weekly_off !== 'None') {
       return emp.weekly_off;
     }
-    return 'Sunday';
+    return 'None';
   }
 
   // Startup migrations are now handled by database.cjs
@@ -245,12 +246,12 @@ async function registerApiHandlers(ipcMain, db) {
         }
 
         if (search) {
-          query += ' AND (name LIKE ? OR employee_code LIKE ? OR department LIKE ? OR mobile_number LIKE ?)';
+          query += ' AND (name LIKE ? OR employee_code LIKE ? OR joining_date LIKE ?)';
           const p = `%${search}%`;
-          params.push(p, p, p, p);
+          params.push(p, p, p);
         }
 
-        query += ' ORDER BY name ASC';
+        query += ' ORDER BY employee_code ASC';
         return await db.all(query, params);
       }
       
@@ -312,13 +313,16 @@ async function registerApiHandlers(ipcMain, db) {
         // Audit: CREATE
         await logHistory(id, name, 'CREATE', null, null, null, { changedBy: session ? session.username : 'Admin' });
         
-        // Also log initial weekly off in history
+        // Also log initial weekly off in history (only if a real day is selected, skip 'None' or empty)
         const effectiveFrom = joining_date || new Date().toISOString().split('T')[0];
-        await db.run(
-          `INSERT INTO employee_weekly_off_history (id, employee_id, weekly_off, effective_from)
-           VALUES (?, ?, ?, ?)`,
-          [uuidv4(), id, weekly_off || 'Sunday', effectiveFrom]
-        );
+        const validWeeklyOff = weekly_off && weekly_off !== 'None' ? weekly_off : null;
+        if (validWeeklyOff) {
+          await db.run(
+            `INSERT INTO employee_weekly_off_history (id, employee_id, weekly_off, effective_from)
+             VALUES (?, ?, ?, ?)`,
+            [uuidv4(), id, validWeeklyOff, effectiveFrom]
+          );
+        }
 
         // Queue in Delta Sync Engine
         await enqueueSync('employees', id, 'INSERT', {
@@ -400,11 +404,14 @@ async function registerApiHandlers(ipcMain, db) {
             // Log weekly off changes in history table for dynamic historical auto-fill
             if (ch.field === 'weekly_off') {
               const effectiveFrom = new Date().toISOString().split('T')[0];
-              await db.run(
-                `INSERT INTO employee_weekly_off_history (id, employee_id, weekly_off, effective_from)
-                 VALUES (?, ?, ?, ?)`,
-                [uuidv4(), id, ch.newVal, effectiveFrom]
-              );
+              const histWeeklyOff = ch.newVal && ch.newVal !== 'None' ? ch.newVal : null;
+              if (histWeeklyOff) {
+                await db.run(
+                  `INSERT INTO employee_weekly_off_history (id, employee_id, weekly_off, effective_from)
+                   VALUES (?, ?, ?, ?)`,
+                  [uuidv4(), id, histWeeklyOff, effectiveFrom]
+                );
+              }
             }
           }
 
@@ -443,6 +450,77 @@ async function registerApiHandlers(ipcMain, db) {
         await enqueueSync('employees', id, 'UPDATE', { id, is_active: 0, updated_at: deletedNow }, emp.entity);
 
         return { success: true };
+      }
+
+      // ── HARD DELETE (permanent, for import batch removal) ──
+      if (action === 'hardDelete') {
+        const { id } = data;
+        const emp = await db.get('SELECT * FROM employees WHERE id = ?', [id]);
+        if (!emp) return { success: true };
+
+        if (!canWrite(session, emp.entity)) {
+          await logAccessDenied(session, 'api:employees:hardDelete', emp.entity);
+          throw new Error('ACCESS_DENIED');
+        }
+
+        await db.run('DELETE FROM employee_history WHERE employee_id = ?', [id]);
+        await db.run('DELETE FROM employee_weekly_off_history WHERE employee_id = ?', [id]);
+        await db.run('DELETE FROM tenure_renewals WHERE employee_id = ?', [id]);
+        await db.run('DELETE FROM employees WHERE id = ?', [id]);
+        await enqueueSync('employees', id, 'DELETE', { id }, emp.entity);
+
+        return { success: true };
+      }
+
+      // ── BATCH RENAME (for name standardization) ──
+      if (action === 'batchRename') {
+        const { renames } = data; // [{ oldName, newName, field }]
+        if (!Array.isArray(renames) || renames.length === 0) return { success: true, updated: 0 };
+
+        let updated = 0;
+        for (const { oldName, newName, field } of renames) {
+          if (!oldName || !newName || oldName === newName) continue;
+          const col = field === 'designation' ? 'designation' : 'department';
+          const result = await db.run(`UPDATE employees SET ${col} = ?, updated_at = ? WHERE ${col} = ?`, [newName, new Date().toISOString(), oldName]);
+          updated += result.changes || 0;
+        }
+        return { success: true, updated };
+      }
+
+      // ── BATCH RENAME MASTERS (departments/designations) ──
+      if (action === 'batchRenameMasters') {
+        const { renames } = data; // [{ oldName, newName, type: 'dept'|'desig' }]
+        if (!Array.isArray(renames) || renames.length === 0) return { success: true, updated: 0 };
+
+        let updated = 0;
+        for (const { oldName, newName, type } of renames) {
+          if (!oldName || !newName || oldName === newName) continue;
+          const table = type === 'desig' ? 'designations' : 'departments';
+          const existing = await db.get(`SELECT id FROM ${table} WHERE name = ?`, [newName]);
+          if (existing) {
+            // Target already exists — delete the old one
+            await db.run(`DELETE FROM ${table} WHERE name = ?`, [oldName]);
+          } else {
+            // Rename: update the name
+            await db.run(`UPDATE ${table} SET name = ? WHERE name = ?`, [newName, oldName]);
+          }
+          updated++;
+        }
+        return { success: true, updated };
+      }
+
+      // ── BATCH RENAME EMPLOYEE NAMES ──
+      if (action === 'batchRenameNames') {
+        const { renames } = data; // [{ oldName, newName }]
+        if (!Array.isArray(renames) || renames.length === 0) return { success: true, updated: 0 };
+
+        let updated = 0;
+        for (const { oldName, newName } of renames) {
+          if (!oldName || !newName || oldName === newName) continue;
+          const result = await db.run('UPDATE employees SET name = ?, updated_at = ? WHERE name = ?', [newName, new Date().toISOString(), oldName]);
+          updated += result.changes || 0;
+        }
+        return { success: true, updated };
       }
     } catch (err) {
       console.error(err);
@@ -1051,7 +1129,7 @@ async function registerApiHandlers(ipcMain, db) {
         const records = Array.isArray(data) ? data : [data];
         const errors = [];
         
-        await db.run('BEGIN TRANSACTION');
+        await db.run('SAVEPOINT sp_attendance_upsert');
         try {
           for (const record of records) {
             const { employee_id, date, status, remarks } = record;
@@ -1124,7 +1202,7 @@ async function registerApiHandlers(ipcMain, db) {
             }, emp.entity);
           }
           
-          await db.run('COMMIT');
+          await db.run('RELEASE SAVEPOINT sp_attendance_upsert');
           
           // Return with errors if any
           return { 
@@ -1134,7 +1212,7 @@ async function registerApiHandlers(ipcMain, db) {
           };
           
         } catch (txErr) {
-          await db.run('ROLLBACK');
+          await db.run('ROLLBACK TO SAVEPOINT sp_attendance_upsert');
           throw txErr;
         }
       }
@@ -1154,7 +1232,7 @@ async function registerApiHandlers(ipcMain, db) {
         const daysInMonth = new Date(year, month, 0).getDate();
         const fillResults = [];
         
-        await db.run('BEGIN TRANSACTION');
+        await db.run('SAVEPOINT sp_auto_fill_wo');
         try {
           for (const emp of employees) {
             for (let day = 1; day <= daysInMonth; day++) {
@@ -1190,9 +1268,9 @@ async function registerApiHandlers(ipcMain, db) {
               }
             }
           }
-          await db.run('COMMIT');
+          await db.run('RELEASE SAVEPOINT sp_auto_fill_wo');
         } catch (txErr) {
-          await db.run('ROLLBACK');
+          await db.run('ROLLBACK TO SAVEPOINT sp_auto_fill_wo');
           throw txErr;
         }
         

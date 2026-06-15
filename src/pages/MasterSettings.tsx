@@ -8,8 +8,9 @@ import {
 import { useLanguage } from '@/lib/LanguageContext';
 import { useAuthStore } from '@/stores/authStore';
 import { masterAPI, updateAPI } from '../services/api';
-  import UserManager from './settings/UserManager';
+import UserManager from './settings/UserManager';
 import PagePermissionManager from './settings/PagePermissionManager';
+import DataCleanup from './settings/DataCleanup';
 
 interface MasterItem {
   id: string;
@@ -32,8 +33,8 @@ export default function MasterSettings() {
   const isReadOnly = false; // Super Admin has full write access now
   const isSyncConfigLocked = true;
 
-  // Tab State: 'masters' | 'sync' | 'backups' | 'visibility' | 'users' | 'danger' | 'updates' | 'permissions'
-  const [activeTab, setActiveTab] = useState<'masters' | 'sync' | 'backups' | 'visibility' | 'users' | 'danger' | 'updates' | 'permissions'>('masters');
+  // Tab State: 'masters' | 'sync' | 'backups' | 'visibility' | 'users' | 'danger' | 'updates' | 'permissions' | 'cleanup'
+  const [activeTab, setActiveTab] = useState<'masters' | 'sync' | 'backups' | 'visibility' | 'users' | 'danger' | 'updates' | 'permissions' | 'cleanup'>('masters');
 
   // Masters State
   const [departments, setDepartments] = useState<MasterItem[]>([]);
@@ -71,7 +72,7 @@ export default function MasterSettings() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    fetchMasters();
+    fetchMasters(true);
     loadSyncConfig();
     fetchBackups();
     fetchUpdates();
@@ -135,16 +136,16 @@ export default function MasterSettings() {
   };
 
   // ─── Masters Panel logic ───
-  const fetchMasters = async () => {
-    setLoadingMasters(true);
+  const fetchMasters = async (showLoading = false) => {
+    if (showLoading) setLoadingMasters(true);
     try {
       const data = await masterAPI.getAll();
-      setDepartments(Array.isArray(data.departments) ? data.departments : []);
-      setDesignations(Array.isArray(data.designations) ? data.designations : []);
+      setDepartments(data?.departments && Array.isArray(data.departments) ? data.departments : []);
+      setDesignations(data?.designations && Array.isArray(data.designations) ? data.designations : []);
     } catch (err) {
       console.error('Error fetching masters:', err);
     } finally {
-      setLoadingMasters(false);
+      if (showLoading) setLoadingMasters(false);
     }
   };
 
@@ -639,6 +640,19 @@ export default function MasterSettings() {
             </button>
             {isSuperAdmin && (
               <button
+                onClick={() => setActiveTab('cleanup')}
+                role="tab"
+                aria-selected={activeTab === 'cleanup'}
+                className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                  activeTab === 'cleanup' ? 'bg-orange-500 text-white shadow' : 'text-orange-400 hover:text-orange-300'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{language === 'hi' ? 'डेटा सफाई' : 'Cleanup'}</span>
+              </button>
+            )}
+            {isSuperAdmin && (
+              <button
                 onClick={() => setActiveTab('danger')}
                 role="tab"
                 aria-selected={activeTab === 'danger'}
@@ -680,6 +694,11 @@ export default function MasterSettings() {
       {/* Tab Contents */}
       <div className="transition-all duration-300">
         
+        {/* CLEANUP TAB */}
+        {activeTab === 'cleanup' && (
+          <DataCleanup />
+        )}
+
         {/* MASTERS TAB */}
         {activeTab === 'masters' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
