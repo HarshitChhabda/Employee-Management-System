@@ -32,6 +32,8 @@ release/
 *.dll
 *.blockmap
 *.yml
+!*.yml
+!.github/**/*.yml
 !electron/**/*.dll
 
 # AI / Agent tools
