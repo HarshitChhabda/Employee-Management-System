@@ -105,14 +105,21 @@ async function pullFromSupabase(db, session) {
   const letterTables = ['letters'];
   const childTables = ['attendance', 'employee_history', 'pl_records', 'leave_balances', 'leave_history', 'payroll_summary', 'tenure_renewals', 'employee_category_history', 'employee_weekly_off_history'];
 
+  const DEFAULTS = {
+    employees: { category: 'daily_wage', entity: 'BRANCH' },
+    resigned_employees: { category: 'daily_wage', entity: 'BRANCH' },
+  };
+
   const insertData = async (table, data) => {
     if (!data || data.length === 0) return 0;
     let count = 0;
+    const defaults = DEFAULTS[table] || {};
     for (const row of data) {
-      const cols = Object.keys(row);
+      const merged = { ...defaults, ...row };
+      const cols = Object.keys(merged);
       const placeholders = cols.map(() => '?');
       const sql = `INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
-      await db.run(sql, cols.map(c => row[c]));
+      await db.run(sql, cols.map(c => merged[c]));
       count++;
     }
     return count;
