@@ -16,6 +16,7 @@ import {
 import { hindiLabels, attendanceStatuses } from '../lib/hindiLabels';
 import { Link } from 'react-router-dom';
 import LeaveBalanceWidget from '../components/LeaveBalanceWidget';
+import EmployeeFilterBar from '../components/EmployeeFilterBar';
 
 interface AttendanceRecord {
   id?: number;
@@ -33,6 +34,9 @@ export default function Attendance() {
   const [attendance, setAttendance] = useState<Record<number, AttendanceRecord>>({});
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [employeeIdSearch, setEmployeeIdSearch] = useState('');
   const [foundEmployee, setFoundEmployee] = useState<any>(null);
   const [showBalanceFor, setShowBalanceFor] = useState<number | null>(null);
@@ -171,11 +175,15 @@ export default function Attendance() {
     }
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredEmployees = employees.filter(emp => {
+    const matchSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.department.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchCategory = !categoryFilter || emp.category === categoryFilter;
+    const matchDepartment = !departmentFilter || emp.department === departmentFilter;
+    const matchDesignation = !designationFilter || emp.designation === designationFilter;
+    return matchSearch && matchCategory && matchDepartment && matchDesignation;
+  });
 
   const getStatusStats = () => {
     const stats: Record<string, number> = {};
@@ -390,17 +398,17 @@ export default function Attendance() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative font-bold">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="कर्मचारी खोजें (Search employees...)"
-          className="w-full pl-12 pr-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm"
-        />
-      </div>
+      {/* Filters */}
+      <EmployeeFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        categoryFilter={categoryFilter}
+        onCategoryChange={setCategoryFilter}
+        departmentFilter={departmentFilter}
+        onDepartmentChange={setDepartmentFilter}
+        designationFilter={designationFilter}
+        onDesignationChange={setDesignationFilter}
+      />
 
       {/* Attendance Table */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl overflow-hidden shadow-xl">

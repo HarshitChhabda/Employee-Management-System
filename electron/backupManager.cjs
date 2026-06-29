@@ -66,12 +66,20 @@ async function listBackups(app) {
 async function restoreBackup(app, backupPath, dbPath) {
   if (!fs.existsSync(backupPath)) throw new Error('Backup file not found');
   
+  // SECURITY: Validate backup path is within allowed directory
+  const path = require('path');
+  const resolved = path.resolve(backupPath);
+  const backupDir = path.resolve(getBackupDir(app));
+  if (!resolved.startsWith(backupDir)) {
+    throw new Error('ACCESS_DENIED: Backup path outside allowed directory');
+  }
+  
   // 1. Create a safety backup first!
   await createBackup(app, dbPath);
   
   // 2. Overwrite target db file
-  fs.copyFileSync(backupPath, dbPath);
-  console.log(`[Backup] Database successfully restored from: ${backupPath}`);
+  fs.copyFileSync(resolved, dbPath);
+  console.log(`[Backup] Database successfully restored from: ${resolved}`);
   return true;
 }
 

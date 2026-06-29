@@ -83,7 +83,15 @@ function createUpdateSnapshot(app) {
 function restoreFromSnapshot(app, snapshotName) {
   const snapshotDir = getSnapshotDir(app);
   const snapshotPath = path.join(snapshotDir, snapshotName);
-  const snapshotMetaPath = path.join(snapshotPath, 'meta.json');
+  
+  // SECURITY: Validate snapshot path is within snapshot directory
+  const resolved = path.resolve(snapshotPath);
+  const allowedDir = path.resolve(snapshotDir);
+  if (!resolved.startsWith(allowedDir)) {
+    throw new Error('ACCESS_DENIED: Snapshot path outside allowed directory');
+  }
+  
+  const snapshotMetaPath = path.join(resolved, 'meta.json');
 
   if (!fs.existsSync(snapshotMetaPath)) {
     throw new Error(`Snapshot not found: ${snapshotName}`);

@@ -22,6 +22,7 @@ import { useToast } from '../components/Toast';
 import { getCategoryLabel, getCategoryColor } from '../lib/categoryUtils';
 import { cn } from "@/lib/utils";
 import { resignedAPI } from '../services/api';
+import EmployeeFilterBar from '../components/EmployeeFilterBar';
 
 interface ResignedEmployee {
   id: string;
@@ -43,6 +44,9 @@ export default function Resigned() {
   const [resignedEmployees, setResignedEmployees] = useState<ResignedEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [editingResigned, setEditingResigned] = useState<ResignedEmployee | null>(null);
   const [editData, setEditData] = useState({
     tenure_end_date: '',
@@ -72,6 +76,13 @@ export default function Resigned() {
       setLoading(false);
     }
   };
+
+  const filteredResignedEmployees = resignedEmployees.filter(emp => {
+    const matchCategory = !categoryFilter || emp.category === categoryFilter;
+    const matchDepartment = !departmentFilter || emp.department === departmentFilter;
+    const matchDesignation = !designationFilter || emp.designation === designationFilter;
+    return matchCategory && matchDepartment && matchDesignation;
+  });
 
   const handleRehire = async (id: string, name: string) => {
     setRehireConfirm({open: true, id, name});
@@ -227,17 +238,18 @@ export default function Resigned() {
           </div>
         </div>
 
-        {/* Bilingual Search Box */}
-        <div className="relative font-bold">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="नाम, कोड या विभाग द्वारा खोजें... (Search name, code, department...)"
-            className="w-full pl-11 pr-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-red-500 focus:outline-none shadow-sm text-xs font-bold"
-          />
-        </div>
+        {/* Filters */}
+        <EmployeeFilterBar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          categoryFilter={categoryFilter}
+          onCategoryChange={setCategoryFilter}
+          departmentFilter={departmentFilter}
+          onDepartmentChange={setDepartmentFilter}
+          designationFilter={designationFilter}
+          onDesignationChange={setDesignationFilter}
+          searchPlaceholder="नाम, कोड या विभाग द्वारा खोजें... (Search name, code, department...)"
+        />
 
         {/* High Density Cards Grid */}
         {loading ? (
@@ -251,7 +263,7 @@ export default function Resigned() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {resignedEmployees.map((emp) => {
+            {filteredResignedEmployees.map((emp) => {
               const isTenureExpiring = emp.reason === '' && emp.resign_date === 'Tenure Expiring Soon';
               const tenure = calculateTenure(emp.joining_date, emp.resign_date);
               return (

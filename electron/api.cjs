@@ -1,5 +1,6 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const { hashPassword, validatePasswordStrength } = require('./passwordUtils.cjs');
+const { loadSession, isSessionExpired } = require('./sessionManager.cjs');
 
 // Fields to track for audit history
 const TRACKED_FIELDS = [
@@ -10,7 +11,17 @@ const TRACKED_FIELDS = [
   'tenure_end_date'
 ];
 
-async function registerApiHandlers(ipcMain, db) {
+async function registerApiHandlers(ipcMain, db, app) {
+
+  // SECURITY: Validate that renderer-provided session matches server-side memory session
+  // Prevents privilege escalation via localStorage session tampering
+  function validateSession(rendererSession) {
+    const serverSession = loadSession(app);
+    if (!serverSession) return null;
+    if (isSessionExpired(app)) return null;
+    // Only trust the server-side session, ignore renderer-provided data
+    return serverSession;
+  }
 
   // Helper: Get effective weekly off for a given employee and date
   // Returns the day name (e.g. 'Sunday') or 'None' if no weekly off is set
@@ -98,8 +109,9 @@ async function registerApiHandlers(ipcMain, db) {
   }
 
   // ─── Dashboard ───
-  ipcMain.handle('api:dashboard', async (event, session) => {
+  ipcMain.handle('api:dashboard', async (event, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const today = new Date().toISOString().split('T')[0];
       const filter = getEntityFilter(session);
       const getCount = async (query, params = []) => {
@@ -209,8 +221,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Employees ───
-  ipcMain.handle('api:employees', async (event, action, data, session) => {
+  ipcMain.handle('api:employees', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       // ── GET ──
@@ -278,6 +291,7 @@ async function registerApiHandlers(ipcMain, db) {
           const prefixKey = targetEntity === 'BRANCH' ? 'branch_id_prefix' : 'ho_id_prefix';
           const counterKey = targetEntity === 'BRANCH' ? 'branch_id_counter' : 'ho_id_counter';
           
+          // SECURITY: Use atomic transaction to prevent race condition on counter
           const prefixRow = await db.get("SELECT value FROM system_config WHERE key = ?", [prefixKey]);
           const counterRow = await db.get("SELECT value FROM system_config WHERE key = ?", [counterKey]);
           
@@ -287,8 +301,24 @@ async function registerApiHandlers(ipcMain, db) {
           
           finalEmployeeCode = `${prefix}${String(newCount).padStart(4, '0')}`;
           
-          // Increment counter
-          await db.run("INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)", [counterKey, String(newCount)]);
+          // Check for duplicate before incrementing
+          const existing = await db.get("SELECT id FROM employees WHERE employee_code = ?", [finalEmployeeCode]);
+          if (existing) {
+            // If duplicate exists, find next available code
+            let nextCount = newCount + 1;
+            while (nextCount < newCount + 1000) {
+              const nextCode = `${prefix}${String(nextCount).padStart(4, '0')}`;
+              const dup = await db.get("SELECT id FROM employees WHERE employee_code = ?", [nextCode]);
+              if (!dup) {
+                finalEmployeeCode = nextCode;
+                break;
+              }
+              nextCount++;
+            }
+          }
+          
+          // Increment counter atomically
+          await db.run("INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)", [counterKey, String(parseInt(finalEmployeeCode.slice(-4), 10))]);
         }
         
         const now = new Date().toISOString();
@@ -524,8 +554,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Employee History ───
-  ipcMain.handle('api:employee-history', async (event, action, data, session) => {
+  ipcMain.handle('api:employee-history', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
       if (action === 'get') {
         const { employee_id, action_type, from_date, to_date, search, limit, offset } = data || {};
@@ -590,8 +621,9 @@ async function registerApiHandlers(ipcMain, db) {
   }
 
   // ─── Letters ───
-  ipcMain.handle('api:letters', async (event, action, data, session) => {
+  ipcMain.handle('api:letters', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -789,9 +821,23 @@ async function registerApiHandlers(ipcMain, db) {
         const fs = require('fs');
         const path = require('path');
 
-        if (file_local_path && fs.existsSync(file_local_path)) {
-          const buffer = fs.readFileSync(file_local_path);
-          return { file_data: buffer.toString('base64'), source: 'local' };
+        if (file_local_path) {
+          // SECURITY: Validate path is within allowed directories
+          const resolved = path.resolve(file_local_path);
+          const appData = app.getPath('userData');
+          const allowedDirs = [
+            path.resolve(path.join(appData, 'letters')),
+            path.resolve(path.join(appData, 'backups')),
+            path.resolve(path.join(appData, 'photos')),
+          ];
+          const isAllowed = allowedDirs.some(dir => resolved.startsWith(dir));
+          if (!isAllowed) {
+            throw new Error('ACCESS_DENIED: Path outside allowed directory');
+          }
+          if (fs.existsSync(resolved)) {
+            const buffer = fs.readFileSync(resolved);
+            return { file_data: buffer.toString('base64'), source: 'local' };
+          }
         }
 
         if (file_url) {
@@ -1079,8 +1125,9 @@ async function registerApiHandlers(ipcMain, db) {
   }
 
   // ─── Attendance ───
-  ipcMain.handle('api:attendance', async (event, action, data, session) => {
+  ipcMain.handle('api:attendance', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1278,8 +1325,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Resigned Employees ───
-  ipcMain.handle('api:resigned', async (event, action, data, session) => {
+  ipcMain.handle('api:resigned', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1430,8 +1478,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── PL Records ───
-  ipcMain.handle('api:pl-records', async (event, action, data, session) => {
+  ipcMain.handle('api:pl-records', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1504,8 +1553,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Masters (Departments & Designations) ───
-  ipcMain.handle('api:masters', async (event, action, data, session) => {
+  ipcMain.handle('api:masters', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       if (action === 'get') {
         const departments = await db.all('SELECT * FROM departments ORDER BY name ASC');
         const designations = await db.all('SELECT * FROM designations ORDER BY name ASC');
@@ -1514,20 +1564,24 @@ async function registerApiHandlers(ipcMain, db) {
       
       // Super Admin is now allowed to mutate masters along with HO and Branch.
       if (action === 'create_department') {
+        if (!canWrite(session, 'ALL')) throw new Error('Unauthorized: Cannot create department');
         const id = uuidv4();
         await db.run('INSERT INTO departments (id, name) VALUES (?, ?)', [id, data.name]);
         return { id, name: data.name };
       }
       if (action === 'delete_department') {
+        if (!canWrite(session, 'ALL')) throw new Error('Unauthorized: Cannot delete department');
         await db.run('DELETE FROM departments WHERE id = ?', [data.id]);
         return { success: true };
       }
       if (action === 'create_designation') {
+        if (!canWrite(session, 'ALL')) throw new Error('Unauthorized: Cannot create designation');
         const id = uuidv4();
         await db.run('INSERT INTO designations (id, name) VALUES (?, ?)', [id, data.name]);
         return { id, name: data.name };
       }
       if (action === 'delete_designation') {
+        if (!canWrite(session, 'ALL')) throw new Error('Unauthorized: Cannot delete designation');
         await db.run('DELETE FROM designations WHERE id = ?', [data.id]);
         return { success: true };
       }
@@ -1538,8 +1592,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Tenure Renewals ───
-  ipcMain.handle('api:tenure-renewals', async (event, action, data, session) => {
+  ipcMain.handle('api:tenure-renewals', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1604,8 +1659,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Leave Balances ───
-  ipcMain.handle('api:leave-balances', async (event, action, data, session) => {
+  ipcMain.handle('api:leave-balances', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1672,8 +1728,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Payroll Summary ───
-  ipcMain.handle('api:payroll-summary', async (event, action, data, session) => {
+  ipcMain.handle('api:payroll-summary', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const filter = getEntityFilter(session);
 
       if (action === 'get') {
@@ -1701,8 +1758,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── App Users Management ───
-  ipcMain.handle('api:users', async (event, action, data, session) => {
+  ipcMain.handle('api:users', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       if (!session) {
         throw new Error('ACCESS_DENIED: User session not found.');
       }
@@ -1766,8 +1824,8 @@ async function registerApiHandlers(ipcMain, db) {
         const now = new Date().toISOString();
 
         await db.run(
-          'INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-          [id, username, display_name, password, hashedPassword, role, entity, now, now]
+          'INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)',
+          [id, username, display_name, hashedPassword, role, entity, now, now]
         );
 
         await enqueueSync('app_users', id, 'INSERT', {
@@ -1919,8 +1977,9 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Page Permissions API ───
-  ipcMain.handle('api:permissions', async (event, action, data, session) => {
+  ipcMain.handle('api:permissions', async (event, action, data, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       if (!session) {
         throw new Error('ACCESS_DENIED: User session not found.');
       }
@@ -2094,8 +2153,9 @@ async function registerApiHandlers(ipcMain, db) {
     }
   });
 
-  ipcMain.handle('api:update:check', async (event, session) => {
+  ipcMain.handle('api:update:check', async (event, rendererSession) => {
     try {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
       const results = { local: false, supabase: false, updates: [] };
 
       // Check local DB for available updates
@@ -2316,9 +2376,10 @@ async function registerApiHandlers(ipcMain, db) {
   });
 
   // ─── Danger Zone: Nuke Database ───
-  ipcMain.handle('api:nuke-database', async (event, session) => {
+  ipcMain.handle('api:nuke-database', async (event, rendererSession) => {
     try {
-      if (!session || session.role !== 'ROLE_SUPER') {
+      const session = validateSession(rendererSession); if (!session) return { success: false, error: 'Session expired or invalid' };
+      if (session.role !== 'ROLE_SUPER') {
         throw new Error('ACCESS_DENIED: Only Super Admin can nuke the database.');
       }
       

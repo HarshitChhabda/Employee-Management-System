@@ -412,9 +412,9 @@ async function setupDatabase() {
       const adminHash = await hashPassword('7014');
       await db.run(`
         INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active)
-        VALUES (?, 'admin', 'Super Admin', '7014', ?, 'ROLE_SUPER', 'ALL', 1)
+        VALUES (?, 'admin', 'Super Admin', NULL, ?, 'ROLE_SUPER', 'ALL', 1)
       `, [uuidv4(), adminHash]);
-      console.log('[Database] Seeded default admin user successfully.');
+      console.log('[Database] Seeded default admin user successfully. Default password: 7014 — CHANGE IT AFTER FIRST LOGIN.');
     }
   } catch (e) {
     console.error('Seed app_users error:', e);
@@ -502,9 +502,9 @@ async function setupDatabase() {
       const adminHash = await hashPassword('7014');
       await db.run(`
         INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active)
-        VALUES (?, 'admin', 'Super Admin', '7014', ?, 'ROLE_SUPER', 'ALL', 1)
+        VALUES (?, 'admin', 'Super Admin', NULL, ?, 'ROLE_SUPER', 'ALL', 1)
       `, [uuidv4(), adminHash]);
-      console.log('[Migration] Created default admin user (admin/7014)');
+      console.log('[Migration] Created default admin user (admin/7014) — CHANGE PASSWORD AFTER FIRST LOGIN');
     }
   } catch(e) {
     console.log('[Migration] Admin user migration skipped:', e.message);

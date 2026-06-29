@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { CalendarDays, List, Search, Grid3X3, Users } from 'lucide-react';
 import AttendanceCalendar from '../components/AttendanceCalendar';
 import DayEditModal from '../components/DayEditModal';
+import EmployeeFilterBar from '../components/EmployeeFilterBar';
 import { hindiLabels } from '../lib/hindiLabels';
 import { getCategoryColor, getCategoryLabel } from '../lib/categoryUtils';
 
@@ -10,6 +11,9 @@ export default function AttendanceCalendarView() {
   const [filteredEmployees, setFilteredEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   
   // Calendar state
@@ -27,13 +31,17 @@ export default function AttendanceCalendarView() {
   }, []);
 
   useEffect(() => {
-    const filtered = employees.filter(emp => 
-      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.department.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filtered = employees.filter(emp => {
+      const matchSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.department.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchCategory = !categoryFilter || emp.category === categoryFilter;
+      const matchDepartment = !departmentFilter || emp.department === departmentFilter;
+      const matchDesignation = !designationFilter || emp.designation === designationFilter;
+      return matchSearch && matchCategory && matchDepartment && matchDesignation;
+    });
     setFilteredEmployees(filtered);
-  }, [searchQuery, employees]);
+  }, [searchQuery, categoryFilter, departmentFilter, designationFilter, employees]);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -112,43 +120,41 @@ export default function AttendanceCalendarView() {
         </div>
       </div>
 
-      {/* Search & Month Selector */}
-      <div className="flex flex-col sm:flex-row gap-4 font-bold">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="कर्मचारी खोजें (Search employees...)"
-            className="w-full pl-12 pr-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm"
-          />
-        </div>
-        
-        {/* Month/Year Selector */}
-        <div className="flex items-center gap-3">
-          <select
-            value={currentMonth}
-            onChange={(e) => setCurrentMonth(parseInt(e.target.value))}
-            className="px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm cursor-pointer font-bold font-mono"
-          >
-            {[
-              'जनवरी', 'फ़रवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
-              'जुलाई', 'अगस्त', 'सितम्बर', 'अक्तूबर', 'नवंबर', 'दिसंबर'
-            ].map((m, i) => (
-              <option key={i} value={i + 1}>{m}</option>
-            ))}
-          </select>
-          <select
-            value={currentYear}
-            onChange={(e) => setCurrentYear(parseInt(e.target.value))}
-            className="px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm cursor-pointer font-bold font-mono"
-          >
-            {[2023, 2024, 2025, 2026, 2027].map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
+      {/* Filters */}
+      <EmployeeFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        categoryFilter={categoryFilter}
+        onCategoryChange={setCategoryFilter}
+        departmentFilter={departmentFilter}
+        onDepartmentChange={setDepartmentFilter}
+        designationFilter={designationFilter}
+        onDesignationChange={setDesignationFilter}
+      />
+
+      {/* Month/Year Selector */}
+      <div className="flex items-center gap-3 font-bold">
+        <select
+          value={currentMonth}
+          onChange={(e) => setCurrentMonth(parseInt(e.target.value))}
+          className="px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm cursor-pointer font-bold font-mono"
+        >
+          {[
+            'जनवरी', 'फ़रवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
+            'जुलाई', 'अगस्त', 'सितम्बर', 'अक्तूबर', 'नवंबर', 'दिसंबर'
+          ].map((m, i) => (
+            <option key={i} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select
+          value={currentYear}
+          onChange={(e) => setCurrentYear(parseInt(e.target.value))}
+          className="px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none shadow-sm text-sm cursor-pointer font-bold font-mono"
+        >
+          {[2023, 2024, 2025, 2026, 2027].map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
       </div>
 
       {/* Stats Summary */}

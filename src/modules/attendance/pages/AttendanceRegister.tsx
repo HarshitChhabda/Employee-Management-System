@@ -10,7 +10,9 @@ import {
   Activity,
   ShieldCheck,
   Database,
-  ArrowRight
+  ArrowRight,
+  Filter,
+  X
 } from 'lucide-react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useEmployeeStore } from '@/stores/employeeStore';
@@ -19,6 +21,8 @@ import { useConnectivity } from '@/lib/ConnectivityContext';
 import { EnterpriseTable, Column } from '@/core-ui/tables/EnterpriseTable';
 import { StatusPopup } from '../components/StatusPopup';
 import { cn } from '@/lib/utils';
+import { categories } from '@/lib/hindiLabels';
+import { masterAPI } from '@/services/api';
 
 const STATUS_BADGE: Record<string, string> = {
   'P':   'badge-present',
@@ -49,6 +53,11 @@ export default function AttendanceRegister() {
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
+  const [masterDepartments, setMasterDepartments] = useState([]);
+  const [masterDesignations, setMasterDesignations] = useState([]);
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [currentCell, setCurrentCell] = useState<{ empId: string | number; day: number; rowIndex: number } | null>(null);
@@ -62,6 +71,21 @@ export default function AttendanceRegister() {
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
   useEffect(() => { fetchAttendance(currentMonth + 1, currentYear); }, [currentMonth, currentYear, fetchAttendance]);
+
+  useEffect(() => {
+    const fetchMasters = async () => {
+      try {
+        const data = await masterAPI.getAll();
+        setMasterDepartments(data?.departments || []);
+        setMasterDesignations(data?.designations || []);
+      } catch (err) {
+        console.error('Error fetching masters:', err);
+      }
+    };
+    fetchMasters();
+    window.addEventListener('mastersUpdated', fetchMasters);
+    return () => window.removeEventListener('mastersUpdated', fetchMasters);
+  }, []);
 
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
@@ -87,11 +111,15 @@ export default function AttendanceRegister() {
   };
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter(emp => 
-      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [employees, searchQuery]);
+    return employees.filter(emp => {
+      const matchSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.employee_code.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchCategory = !categoryFilter || emp.category === categoryFilter;
+      const matchDepartment = !departmentFilter || emp.department === departmentFilter;
+      const matchDesignation = !designationFilter || emp.designation === designationFilter;
+      return matchSearch && matchCategory && matchDepartment && matchDesignation;
+    });
+  }, [employees, searchQuery, categoryFilter, departmentFilter, designationFilter]);
 
   const getInitials = (name: string) => {
     const parts = name.split(' ');
@@ -315,7 +343,7 @@ export default function AttendanceRegister() {
 
                 const rows: string[][] = [];
                 
-                employees.forEach(emp => {
+                filteredEmployees.forEach(emp => {
                   const row: string[] = [emp.employee_code || '', emp.name || '', emp.department || '', emp.designation || ''];
                   
                   let totalP = 0, totalA = 0, totalPL = 0, totalCL = 0, totalHCL = 0, totalWO = 0, totalOD = 0, totalHD = 0, totalLWP = 0;
@@ -371,17 +399,80 @@ export default function AttendanceRegister() {
       </div>
 
       {/* High-Density Action Bar */}
-      <div className="px-6 py-3 d-flex align-items-center justify-content-between bg-surface/40">
-        <div className="position-relative" style={{ width: '320px' }}>
-          <Search className="position-absolute translate-middle-y top-50 start-0 ms-3 text-dim" size={14} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search Personnel Database..."
-            className="form-control form-control-sm ps-10 bg-subtle border-subtle text-foreground font-sans"
-            style={{ fontSize: '0.8rem', height: '36px', borderRadius: 'var(--radius-md)' }}
-          />
+      <div className="px-6 py-3 d-flex align-items-center justify-content-between bg-surface/40 flex-wrap gap-3">
+        <div className="d-flex align-items-center gap-3 flex-wrap flex-grow-1">
+          <div className="position-relative" style={{ width: '320px' }}>
+            <Search className="position-absolute translate-middle-y top-50 start-0 ms-3 text-dim" size={14} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Personnel Database..."
+              className="form-control form-control-sm ps-10 bg-subtle border-subtle text-foreground font-sans"
+              style={{ fontSize: '0.8rem', height: '36px', borderRadius: 'var(--radius-md)' }}
+            />
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <Filter size={14} className="text-dim" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="form-select form-select-sm bg-subtle border-subtle text-foreground font-sans"
+              style={{ fontSize: '0.75rem', height: '36px', borderRadius: 'var(--radius-md)', minWidth: '150px' }}
+            >
+              <option value="">All Categories / सभी श्रेणी</option>
+              {categories.map(c => (
+                <option key={c.value} value={c.value}>{c.labelHi}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <Filter size={14} className="text-dim" />
+            <select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className="form-select form-select-sm bg-subtle border-subtle text-foreground font-sans"
+              style={{ fontSize: '0.75rem', height: '36px', borderRadius: 'var(--radius-md)', minWidth: '150px' }}
+            >
+              <option value="">All Departments / सभी विभाग</option>
+              {masterDepartments.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <Filter size={14} className="text-dim" />
+            <select
+              value={designationFilter}
+              onChange={(e) => setDesignationFilter(e.target.value)}
+              className="form-select form-select-sm bg-subtle border-subtle text-foreground font-sans"
+              style={{ fontSize: '0.75rem', height: '36px', borderRadius: 'var(--radius-md)', minWidth: '150px' }}
+            >
+              <option value="">All Designations / सभी पदनाम</option>
+              {masterDesignations.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {(searchQuery || categoryFilter || departmentFilter || designationFilter) && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setCategoryFilter('');
+                setDepartmentFilter('');
+                setDesignationFilter('');
+              }}
+              className="btn btn-sm px-3 d-flex align-items-center gap-1.5 bg-danger/10 text-danger border-danger/20 rounded-pill"
+              style={{ fontSize: '0.7rem' }}
+            >
+              <X size={12} />
+              Clear All
+            </button>
+          )}
         </div>
 
         <div className="d-flex align-items-center gap-2">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { employeeAPI, attendanceAPI } from '../services/api';
+import { employeeAPI, attendanceAPI, masterAPI } from '../services/api';
 import { 
   Users, 
   Search, 
@@ -60,6 +60,8 @@ export default function AttendanceReport() {
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [viewType, setViewType] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -67,6 +69,8 @@ export default function AttendanceReport() {
   const [reportPage, setReportPage] = useState(1);
   const [rptShowAll, setRptShowAll] = useState(false);
   const REPORT_PAGE_SIZE = 20;
+  const [masterDepartments, setMasterDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [masterDesignations, setMasterDesignations] = useState<Array<{ id: string; name: string }>>([]);
 
   const [leaveDatesModal, setLeaveDatesModal] = useState<{
     isOpen: boolean;
@@ -87,6 +91,21 @@ export default function AttendanceReport() {
   useEffect(() => {
     fetchData();
   }, [selectedMonth, selectedYear, viewType, selectedDate]);
+
+  useEffect(() => {
+    const fetchMasters = async () => {
+      try {
+        const data = await masterAPI.getAll();
+        setMasterDepartments(data?.departments || []);
+        setMasterDesignations(data?.designations || []);
+      } catch (err) {
+        console.error('Error fetching masters:', err);
+      }
+    };
+    fetchMasters();
+    window.addEventListener('mastersUpdated', fetchMasters);
+    return () => window.removeEventListener('mastersUpdated', fetchMasters);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -123,11 +142,13 @@ export default function AttendanceReport() {
                            emp.employee_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            emp.designation?.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchCategory = !categoryFilter || categoryFilter === 'ALL' || emp.category === categoryFilter;
-      return matchSearch && matchCategory;
+      const matchDepartment = !departmentFilter || departmentFilter === 'ALL' || emp.department === departmentFilter;
+      const matchDesignation = !designationFilter || designationFilter === 'ALL' || emp.designation === designationFilter;
+      return matchSearch && matchCategory && matchDepartment && matchDesignation;
     });
-  }, [employees, searchTerm, categoryFilter]);
+  }, [employees, searchTerm, categoryFilter, departmentFilter, designationFilter]);
 
-  useEffect(() => { setReportPage(1); setRptShowAll(false); }, [searchTerm, categoryFilter]);
+  useEffect(() => { setReportPage(1); setRptShowAll(false); }, [searchTerm, categoryFilter, departmentFilter, designationFilter]);
 
   const getEmployeeStats = useCallback((employeeId: string) => {
     const empAtt = attendance.filter(a => {
@@ -314,6 +335,32 @@ export default function AttendanceReport() {
           >
             <option value="ALL" className="bg-[var(--bg-card)] text-[var(--text-primary)]">{t('attendance.allCategories')}</option>
             {categories.map(c => <option key={c.value} value={c.value} className="bg-[var(--bg-card)] text-[var(--text-primary)]">{language === 'hi' ? c.labelHi : c.label}</option>)}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-primary)] text-[9px] font-black uppercase tracking-widest text-[var(--text-primary)] shadow-sm">
+          <Filter size={13} className="text-[var(--accent-blue)]" />
+          <select
+            value={departmentFilter || 'ALL'}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            aria-label="Filter by department"
+            className="border-0 bg-transparent text-[9px] font-black uppercase tracking-widest outline-none text-[var(--text-primary)] cursor-pointer"
+          >
+            <option value="ALL" className="bg-[var(--bg-card)] text-[var(--text-primary)]">All Departments / सभी विभाग</option>
+            {masterDepartments.map(d => <option key={d.id} value={d.name} className="bg-[var(--bg-card)] text-[var(--text-primary)]">{d.name}</option>)}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-primary)] text-[9px] font-black uppercase tracking-widest text-[var(--text-primary)] shadow-sm">
+          <Filter size={13} className="text-[var(--accent-blue)]" />
+          <select
+            value={designationFilter || 'ALL'}
+            onChange={(e) => setDesignationFilter(e.target.value)}
+            aria-label="Filter by designation"
+            className="border-0 bg-transparent text-[9px] font-black uppercase tracking-widest outline-none text-[var(--text-primary)] cursor-pointer"
+          >
+            <option value="ALL" className="bg-[var(--bg-card)] text-[var(--text-primary)]">All Designations / सभी पदनाम</option>
+            {masterDesignations.map(d => <option key={d.id} value={d.name} className="bg-[var(--bg-card)] text-[var(--text-primary)]">{d.name}</option>)}
           </select>
         </div>
 

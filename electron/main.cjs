@@ -299,7 +299,7 @@ app.whenReady().then(async () => {
   db = await setupDatabase();
   
   // Register API Handlers
-  registerApiHandlers(ipcMain, db);
+  registerApiHandlers(ipcMain, db, app);
 
   const dbPath = path.join(app.getPath('userData'), 'database.sqlite');
 
@@ -361,8 +361,13 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('api:sync:trigger', async (event, session) => {
+  ipcMain.handle('api:sync:trigger', async (event, rendererSession) => {
     try {
+      const { loadSession: loadSess, isSessionExpired: isSessExpired } = require('./sessionManager.cjs');
+      const session = loadSess(app);
+      if (!session || isSessExpired(app)) {
+        return { success: false, error: 'Session expired or invalid' };
+      }
       const pushResult = await processSyncQueue(db);
       if (!pushResult.success) {
         return pushResult;
@@ -555,8 +560,8 @@ app.whenReady().then(async () => {
               
               if (!localCheck) {
                 await db.run(
-                  "INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active, last_login) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
-                  [supaUser.id || uuidv4(), supaUser.username, supaUser.display_name || supaUser.username, password, hashedPassword, supaUser.role, supaUser.entity, lastLoginISO]
+                  "INSERT INTO app_users (id, username, display_name, password, password_hash, role, entity, is_active, last_login) VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?)",
+                  [supaUser.id || uuidv4(), supaUser.username, supaUser.display_name || supaUser.username, hashedPassword, supaUser.role, supaUser.entity, lastLoginISO]
                 );
               } else {
                 await db.run(
@@ -597,13 +602,8 @@ app.whenReady().then(async () => {
         return { success: true, session };
       }
 
-      const localSession = loadSession(app);
-      if (localSession && localSession.username.toLowerCase() === username.toLowerCase()) {
-        const isExpired = new Date(localSession.expiresAt) < new Date();
-        if (!isExpired) {
-          return { success: true, session: localSession, offline: true };
-        }
-      }
+      // SECURITY: Removed offline session fallback - passwords must be validated
+      // Previously, an existing session could be reused without password verification
 
       await recordFailedLogin(db, username);
       await logSecurityEvent(db, 'LOGIN_FAILED', username, false, 'Invalid credentials');

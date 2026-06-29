@@ -1,7 +1,30 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// ALLOWLIST: Only these IPC channels are allowed from renderer
+const ALLOWED_CHANNELS = [
+  'api:employees', 'api:attendance', 'api:letters', 'api:resigned',
+  'api:pl-records', 'api:masters', 'api:tenure-renewals', 'api:leave-balances',
+  'api:payroll-summary', 'api:employee-history', 'api:dashboard',
+  'api:permissions', 'api:auth:login', 'api:auth:logout',
+  'api:sync:save-config', 'api:sync:get-config', 'api:sync:pull', 'api:sync:push', 'api:sync:status',
+  'api:backup:create', 'api:backup:list', 'api:backup:restore', 'api:backup:folder',
+  'api:update:list', 'api:update:check', 'api:update:scan-pendrive', 'api:update:register', 'api:update:install',
+  'api:nuke-database',
+  'dialog:select-photo',
+  'api:updater:check', 'api:updater:download', 'api:updater:install', 'api:updater:status',
+  'api:update-manager:snapshot', 'api:update-manager:snapshots', 'api:update-manager:restore',
+  'api:update-manager:integrity', 'api:update-manager:safe-update', 'api:update-manager:post-update',
+  'api:update-manager:recovery', 'api:update-manager:logs',
+];
+
 contextBridge.exposeInMainWorld('electronAPI', {
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  invoke: (channel, ...args) => {
+    if (!ALLOWED_CHANNELS.includes(channel)) {
+      console.error(`[SECURITY] Blocked IPC call to unauthorized channel: ${channel}`);
+      return Promise.reject(new Error('Unauthorized channel'));
+    }
+    return ipcRenderer.invoke(channel, ...args);
+  },
   selectPhoto: () => ipcRenderer.invoke('dialog:select-photo'),
 
   // Auto Updater API

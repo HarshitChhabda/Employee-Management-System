@@ -119,14 +119,20 @@ export const useAuthStore = create<AuthState>()(
               return { success: false, error: errMessage, locked: res?.locked, remainingMinutes: res?.remainingMinutes };
             }
           } else {
-            // Web environment mock login
+            // Web environment — mock login ONLY in development mode
+            // @ts-ignore
+            const isDev = import.meta.env?.DEV || window.location.hostname === 'localhost';
+            if (!isDev) {
+              throw new Error('Login requires Electron desktop app in production.');
+            }
+            console.warn('[DEV] Using mock login — not available in production builds.');
             if (username === 'admin' && password === '7014') {
               const mockSession: UserSession = {
                 username: 'admin',
                 display_name: 'Super Admin',
                 role: 'ROLE_SUPER',
                 entity: 'ALL',
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
                 lastActivity: new Date().toISOString()
               };
               set({ session: mockSession, isAuthenticated: true, isLoading: false, error: null });

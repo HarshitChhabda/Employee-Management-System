@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from '../lib/LanguageContext';
 import { useToast } from '../components/Toast';
 import { useExport } from '../hooks/useExport';
-import { employeeAPI, attendanceAPI } from '../services/api';
+import { employeeAPI, attendanceAPI, masterAPI } from '../services/api';
 import type { Employee as EmployeeType, AttendanceRecord } from '../types/hrms';
 
 interface Employee extends EmployeeType {}
@@ -60,6 +60,8 @@ export default function PayrollSummary() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().getMonth() + 1
   );
@@ -67,12 +69,29 @@ export default function PayrollSummary() {
     new Date().getFullYear()
   );
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [masterDepartments, setMasterDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [masterDesignations, setMasterDesignations] = useState<Array<{ id: string; name: string }>>([]);
 
   const { exportStyled } = useExport();
 
   useEffect(() => {
     fetchData();
   }, [selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    const fetchMasters = async () => {
+      try {
+        const data = await masterAPI.getAll();
+        setMasterDepartments(data?.departments || []);
+        setMasterDesignations(data?.designations || []);
+      } catch (err) {
+        console.error('Error fetching masters:', err);
+      }
+    };
+    fetchMasters();
+    window.addEventListener('mastersUpdated', fetchMasters);
+    return () => window.removeEventListener('mastersUpdated', fetchMasters);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -159,10 +178,16 @@ export default function PayrollSummary() {
         const matchCat = !categoryFilter || 
           categoryFilter === 'ALL' || 
           emp.category === categoryFilter;
-        return matchSearch && matchCat;
+        const matchDept = !departmentFilter || 
+          departmentFilter === 'ALL' || 
+          emp.department === departmentFilter;
+        const matchDesig = !designationFilter || 
+          designationFilter === 'ALL' || 
+          emp.designation === designationFilter;
+        return matchSearch && matchCat && matchDept && matchDesig;
       })
       .map(calculatePayroll);
-  }, [employees, attendance, searchTerm, categoryFilter]);
+  }, [employees, attendance, searchTerm, categoryFilter, departmentFilter, designationFilter]);
 
   const totals = useMemo(() => {
     return payrollData.reduce((acc, row) => ({
@@ -395,6 +420,36 @@ export default function PayrollSummary() {
               <option value="ALL">सभी श्रेणी / All</option>
               {categories.map(c => (
                 <option key={c.value} value={c.value}>{c.labelHi}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Department Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-[var(--text-secondary)]" />
+            <select
+              value={departmentFilter || 'ALL'}
+              onChange={e => setDepartmentFilter(e.target.value)}
+              className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2 text-xs font-black text-[var(--text-primary)] focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">सभी विभाग / All Depts</option>
+              {masterDepartments.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Designation Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-[var(--text-secondary)]" />
+            <select
+              value={designationFilter || 'ALL'}
+              onChange={e => setDesignationFilter(e.target.value)}
+              className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-3 py-2 text-xs font-black text-[var(--text-primary)] focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">सभी पदनाम / All Desig</option>
+              {masterDesignations.map(d => (
+                <option key={d.id} value={d.name}>{d.name}</option>
               ))}
             </select>
           </div>

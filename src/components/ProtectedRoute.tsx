@@ -36,7 +36,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         }, session) as { can_read: boolean };
         setPageAccess({ can_read: result.can_read, loaded: true });
       } catch (e) {
-        setPageAccess({ can_read: true, loaded: true });
+        setPageAccess({ can_read: false, loaded: true });
       }
     };
     checkAccess();

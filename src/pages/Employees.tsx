@@ -24,6 +24,7 @@ import {
 import { hindiLabels, categories } from '../lib/hindiLabels';
 import { getCategoryLabel, getCategoryColor } from '../lib/categoryUtils';
 import ConfirmModal from '../components/ConfirmModal';
+import EmployeeFilterBar from '../components/EmployeeFilterBar';
 import { useToast } from '../components/Toast';
 import { employeeAPI, masterAPI, tenureAPI, resignedAPI } from '../services/api';
 import type { Employee as EmployeeType } from '../types/hrms';
@@ -671,20 +672,32 @@ export default function Employees() {
 
       const fieldMapping: Record<string, keyof Employee> = {};
       headers.forEach(h => {
-        let trimmed = h.trim();
+        const rawTrimmed = h.trim();
+        const rawLower = rawTrimmed.toLowerCase();
+        let trimmed = rawTrimmed;
+        
         if (isDevLys) {
           try {
-            trimmed = toUnicode(trimmed).trim();
+            trimmed = toUnicode(rawTrimmed).trim();
           } catch (e) {
             // fallback if toUnicode fails
           }
         }
+        
         const lowerTrimmed = trimmed.toLowerCase();
-        if (hindiToFieldMap[trimmed]) {
+        
+        // Match raw English header first, then fallback to unicode converted header
+        if (hindiToFieldMap[rawTrimmed]) {
+          fieldMapping[h] = hindiToFieldMap[rawTrimmed];
+        } else if (hindiToFieldMap[rawLower]) {
+          fieldMapping[h] = hindiToFieldMap[rawLower];
+        } else if (rawLower === 'category' || rawLower === 'श्रेणी') {
+          fieldMapping[h] = 'category';
+        } else if (hindiToFieldMap[trimmed]) {
           fieldMapping[h] = hindiToFieldMap[trimmed];
         } else if (hindiToFieldMap[lowerTrimmed]) {
           fieldMapping[h] = hindiToFieldMap[lowerTrimmed];
-        } else if (lowerTrimmed === 'category') {
+        } else if (lowerTrimmed === 'category' || lowerTrimmed === 'श्रेणी') {
           fieldMapping[h] = 'category';
         }
       });
@@ -757,17 +770,29 @@ export default function Employees() {
         
         // Normalize category from Excel input
         if (empData.category && typeof empData.category === 'string') {
-          const catLower = empData.category.toLowerCase().trim();
+          const rawCat = empData.category.trim();
+          const rawCatLower = rawCat.toLowerCase();
+          
+          let devLysCatLower = '';
+          if (isDevLys) {
+            try {
+              devLysCatLower = toUnicode(rawCat).trim().toLowerCase();
+            } catch (e) {
+              // fallback
+            }
+          }
+
           const categoryMap: Record<string, string> = {
             'permanent': 'permanent', 'स्थायी': 'permanent',
-            'daily_wage': 'daily_wage', 'दैनिक वेतन': 'daily_wage',
-            'samvida': 'samvida', 'संविदा': 'samvida',
+            'daily_wage': 'daily_wage', 'दैनिक वेतन': 'daily_wage', 'daily wages': 'daily_wage', 'dailywage': 'daily_wage',
+            'samvida': 'samvida', 'संविदा': 'samvida', 'samvidha': 'samvida', 'contract': 'samvida',
             'probation': 'probation', 'परिवीक्षा': 'probation',
             'masik_parishram': 'masik_parishram', 'मासिक पारिश्रम': 'masik_parishram',
             'allowance': 'allowance', 'अलाउन्स': 'allowance',
             'mandey': 'mandey', 'मानदेय': 'mandey',
           };
-          empData.category = categoryMap[catLower] || 'daily_wage';
+          
+          empData.category = categoryMap[rawCatLower] || categoryMap[devLysCatLower] || 'daily_wage';
         } else {
           empData.category = 'daily_wage';
         }
@@ -909,57 +934,17 @@ export default function Employees() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 bg-[var(--bg-card)] p-5 rounded-2xl border border-[var(--border-primary)] shadow-lg">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="कर्मचारी खोजें (Name, Code, Joining Date)"
-            className="w-full pl-12 pr-4 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-blue-500 focus:outline-none font-bold text-xs shadow-sm"
-          />
-        </div>
-        <div className="relative">
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="pl-12 pr-10 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none appearance-none cursor-pointer min-w-[200px] font-bold text-xs shadow-sm"
-          >
-            <option value="">सभी श्रेणियां (All Categories)</option>
-            {categories.map(cat => (
-              <option key={cat.value} value={cat.value}>{cat.labelHi}</option>
-            ))}
-          </select>
-        </div>
-        <div className="relative">
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-          <select
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            className="pl-12 pr-10 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none appearance-none cursor-pointer min-w-[200px] font-bold text-xs shadow-sm"
-          >
-            <option value="">सभी विभाग (All Departments)</option>
-            {masterDepartments.map(d => (
-              <option key={d.id} value={d.name}>{d.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="relative">
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
-          <select
-            value={designationFilter}
-            onChange={(e) => setDesignationFilter(e.target.value)}
-            className="pl-12 pr-10 py-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl text-[var(--text-primary)] focus:border-blue-500 focus:outline-none appearance-none cursor-pointer min-w-[200px] font-bold text-xs shadow-sm"
-          >
-            <option value="">सभी पदनाम (All Designations)</option>
-            {masterDesignations.map(d => (
-              <option key={d.id} value={d.name}>{d.name}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <EmployeeFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        categoryFilter={categoryFilter}
+        onCategoryChange={setCategoryFilter}
+        departmentFilter={departmentFilter}
+        onDepartmentChange={setDepartmentFilter}
+        designationFilter={designationFilter}
+        onDesignationChange={setDesignationFilter}
+        searchPlaceholder="कर्मचारी खोजें (Name, Code, Joining Date)"
+      />
 
       {/* Searching Indicator */}
       {searching && !loading && (

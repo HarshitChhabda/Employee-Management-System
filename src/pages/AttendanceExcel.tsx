@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { 
-  Table2, 
-  CalendarDays, 
-  ChevronLeft, 
-  ChevronRight, 
-  Save, 
+import {
+  Table2,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Save,
   Download,
   CheckSquare,
   Square,
@@ -14,9 +14,9 @@ import {
   FileSpreadsheet,
   Search
 } from 'lucide-react';
-import { hindiLabels } from '../lib/hindiLabels';
+import { hindiLabels, categories } from '../lib/hindiLabels';
 import { useToast } from '../components/Toast';
-import { attendanceAPI, employeeAPI } from '../services/api';
+import { attendanceAPI, employeeAPI, masterAPI } from '../services/api';
 import { useExport } from '../hooks/useExport';
 
 interface Employee {
@@ -24,6 +24,8 @@ interface Employee {
   employee_code: string;
   name: string;
   department: string;
+  category?: string;
+  designation?: string;
   weekly_off?: string;
 }
 
@@ -57,19 +59,35 @@ export default function AttendanceExcel() {
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [popupDragging, setPopupDragging] = useState(false);
   const popupDragOffset = useRef({ x: 0, y: 0 });
-  const [currentCell, setCurrentCell] = useState<{empId: string; day: number} | null>(null);
+  const [currentCell, setCurrentCell] = useState<{ empId: string; day: number } | null>(null);
   const [bulkStatus, setBulkStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<() => void>(() => {});
+  const [confirmAction, setConfirmAction] = useState<() => void>(() => { });
   const [confirmTitle, setConfirmTitle] = useState('');
   const [confirmMessage, setConfirmMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [designationFilter, setDesignationFilter] = useState('');
+  const [masterDepartments, setMasterDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [masterDesignations, setMasterDesignations] = useState<Array<{ id: string; name: string }>>([]);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchEmployees();
+    const fetchMasters = async () => {
+      try {
+        const data = await masterAPI.getAll();
+        setMasterDepartments(data?.departments || []);
+        setMasterDesignations(data?.designations || []);
+      } catch (err) {
+        console.error('Error fetching masters:', err);
+      }
+    };
+    fetchMasters();
+    window.addEventListener('mastersUpdated', fetchMasters);
+    return () => window.removeEventListener('mastersUpdated', fetchMasters);
   }, []);
 
   useEffect(() => {
@@ -91,7 +109,7 @@ export default function AttendanceExcel() {
   const fetchAttendance = async () => {
     try {
       const data = await attendanceAPI.getByMonth(currentMonth + 1, currentYear);
-      
+
       const mapped: Record<string, string> = {};
       const records = Array.isArray(data) ? data : [];
       records.forEach((record: AttendanceRecord) => {
@@ -106,7 +124,7 @@ export default function AttendanceExcel() {
   };
 
   const getDaysInMonth = () => new Date(currentYear, currentMonth + 1, 0).getDate();
-  
+
   const getDayName = (day: number) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const date = new Date(currentYear, currentMonth, day);
@@ -195,10 +213,10 @@ export default function AttendanceExcel() {
 
   useEffect(() => {
     if (!showPopup) return;
-    
+
     const statusCodes = Object.keys(STATUS_CONFIG);
     let focusIndex = -1;
-    
+
     const shortcuts: Record<string, string> = {
       'p': 'P', 'a': 'A', 'c': 'CL', 'l': 'PL', 'h': 'HCL',
       'w': 'WO', 'o': 'OD', 'd': 'HD', 'x': 'LWP'
@@ -246,11 +264,11 @@ export default function AttendanceExcel() {
 
   const toggleSelectAll = () => {
     const start = (currentPage - 1) * ROWS_PER_PAGE;
-    const end = Math.min(start + ROWS_PER_PAGE, employees.length);
-    const pageEmployeeIds = employees.slice(start, end).map(e => e.id);
-    
+    const end = Math.min(start + ROWS_PER_PAGE, filteredEmployees.length);
+    const pageEmployeeIds = filteredEmployees.slice(start, end).map(e => e.id);
+
     const allSelected = pageEmployeeIds.every(id => selectedRows.has(id));
-    
+
     setSelectedRows(prev => {
       const newSet = new Set(prev);
       if (allSelected) {
@@ -292,14 +310,14 @@ export default function AttendanceExcel() {
   const fillCurrentPage = () => {
     if (!bulkStatus) return;
     const start = (currentPage - 1) * ROWS_PER_PAGE;
-    const end = Math.min(start + ROWS_PER_PAGE, employees.length);
+    const end = Math.min(start + ROWS_PER_PAGE, filteredEmployees.length);
     const daysInMonth = getDaysInMonth();
     setAttendanceData(prev => {
       const newData = { ...prev };
       for (let i = start; i < end; i++) {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const key = `${employees[i].id}_${dateStr}`;
+          const key = `${filteredEmployees[i].id}_${dateStr}`;
           if (!prev[key]) newData[key] = bulkStatus;
         }
       }
@@ -376,6 +394,8 @@ export default function AttendanceExcel() {
       const search = searchQuery.toLowerCase().trim();
       if (search && !emp.name.toLowerCase().includes(search) && !emp.department?.toLowerCase().includes(search)) return false;
       if (departmentFilter && emp.department !== departmentFilter) return false;
+      if (categoryFilter && emp.category !== categoryFilter) return false;
+      if (designationFilter && emp.designation !== designationFilter) return false;
       return true;
     });
 
@@ -410,7 +430,7 @@ export default function AttendanceExcel() {
     showConfirmation(
       'Auto-Fill Complete / साप्ताहिक अवकाश भरे गए',
       `${count} weekly off entries filled successfully! / ${count} साप्ताहिक अवकाश सफलतापूर्वक भरे गए!`,
-      () => {}
+      () => { }
     );
 
     // Also sync with server (fire-and-forget)
@@ -470,11 +490,10 @@ export default function AttendanceExcel() {
             ? 'Partial Save — Balance Issues / आंशिक सेव'
             : 'Save Complete / सहेजा गया',
           result.errors && result.errors.length > 0
-            ? `${result.savedCount} records saved.\n\nBlocked (insufficient balance):\n${
-                result.errors.map((e: { date: string; error: string }) => `${e.date}: ${e.error}`).join('\n')
-              }`
+            ? `${result.savedCount} records saved.\n\nBlocked (insufficient balance):\n${result.errors.map((e: { date: string; error: string }) => `${e.date}: ${e.error}`).join('\n')
+            }`
             : `${result.savedCount || records.length} attendance records saved successfully! / ${result.savedCount || records.length} उपस्थिति रिकॉर्ड सफलतापूर्वक सहेजे गए!`,
-          () => {}
+          () => { }
         );
       }
     } catch (err) {
@@ -500,9 +519,11 @@ export default function AttendanceExcel() {
       const search = searchQuery.toLowerCase().trim();
       if (search && !emp.name.toLowerCase().includes(search) && !emp.department?.toLowerCase().includes(search)) return false;
       if (departmentFilter && emp.department !== departmentFilter) return false;
+      if (categoryFilter && emp.category !== categoryFilter) return false;
+      if (designationFilter && emp.designation !== designationFilter) return false;
       return true;
     });
-  }, [employees, searchQuery, departmentFilter]);
+  }, [employees, searchQuery, departmentFilter, categoryFilter, designationFilter]);
 
   const totalPages = Math.ceil(filteredEmployees.length / ROWS_PER_PAGE);
   const start = (currentPage - 1) * ROWS_PER_PAGE;
@@ -608,6 +629,8 @@ export default function AttendanceExcel() {
             </button>
           )}
         </div>
+
+
         <select
           value={departmentFilter}
           onChange={(e) => { setDepartmentFilter(e.target.value); setCurrentPage(1); }}
@@ -618,7 +641,48 @@ export default function AttendanceExcel() {
             <option key={dept} value={dept}>{dept}</option>
           ))}
         </select>
+
+        <select
+          value={categoryFilter}
+          onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
+          className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] text-xs font-black focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer"
+        >
+          <option value="">All Categories / सभी श्रेणियां</option>
+          {categories.map(c => (
+            <option key={c.value} value={c.value}>{c.labelHi}</option>
+          ))}
+        </select>
+
+        <select
+          value={designationFilter}
+          onChange={(e) => { setDesignationFilter(e.target.value); setCurrentPage(1); }}
+          className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] text-xs font-black focus:border-blue-500 focus:outline-none shadow-sm cursor-pointer"
+        >
+          <option value="">All Designations / सभी पदनाम</option>
+          {masterDesignations.map(d => (
+            <option key={d.id} value={d.name}>{d.name}</option>
+          ))}
+        </select>
+
+        {(searchQuery || departmentFilter || categoryFilter || designationFilter) && (
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setDepartmentFilter('');
+              setCategoryFilter('');
+              setDesignationFilter('');
+              setCurrentPage(1);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-all text-xs font-black cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+            Clear All
+          </button>
+        )}
       </div>
+
+
+
 
       <div className="flex flex-wrap items-center gap-3 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl p-5 shadow-lg font-bold">
         <select
@@ -677,7 +741,7 @@ export default function AttendanceExcel() {
       </div>
 
       {/* Table */}
-      <div 
+      <div
         ref={tableContainerRef}
         className="flex-1 overflow-auto bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl relative shadow-xl backdrop-blur-md"
       >
@@ -711,7 +775,7 @@ export default function AttendanceExcel() {
             {pageEmployees.map((emp) => (
               <tr key={emp.id} className="hover:bg-[var(--bg-tertiary)] transition-colors">
                 <td className="sticky left-0 z-10 bg-[var(--bg-card)] border-r border-[var(--border-primary)] p-1.5 text-center shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-                  <button 
+                  <button
                     onClick={() => toggleRowSelect(emp.id)}
                     className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded-lg cursor-pointer transition-colors"
                   >
@@ -754,15 +818,15 @@ export default function AttendanceExcel() {
       {/* Status Popup — outside tableContainerRef so position:fixed works with viewport */}
       {showPopup && (
         <>
-          <div 
-            className="fixed inset-0 z-40" 
+          <div
+            className="fixed inset-0 z-40"
             onClick={() => setShowPopup(false)}
           />
           <div
             className="fixed z-50 bg-[var(--bg-card)] border border-[var(--border-primary)] rounded-2xl shadow-2xl overflow-hidden min-w-[220px] backdrop-blur-2xl animate-fade-in"
-            style={{ 
+            style={{
               left: popupPosition.x,
-              top: popupPosition.y 
+              top: popupPosition.y
             }}
           >
             <div
@@ -783,7 +847,7 @@ export default function AttendanceExcel() {
             <div className="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-[var(--border-primary)]">
               {Object.entries(STATUS_CONFIG).map(([code, config]) => {
                 const shortcutMap: Record<string, string> = {
-                  P:'P', A:'A', CL:'C', PL:'L', HCL:'H', WO:'W', OD:'O', HD:'D', LWP:'X'
+                  P: 'P', A: 'A', CL: 'C', PL: 'L', HCL: 'H', WO: 'W', OD: 'O', HD: 'D', LWP: 'X'
                 };
                 return (
                   <button
@@ -792,7 +856,7 @@ export default function AttendanceExcel() {
                     onClick={() => handleStatusSelect(code)}
                     className="w-full flex items-center gap-3.5 px-4 py-3 hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-tertiary)] focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors cursor-pointer text-left font-bold"
                   >
-                    <div 
+                    <div
                       className="w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-black flex-shrink-0 shadow-sm font-mono"
                       style={{ background: config.bg, borderColor: config.text, color: config.text }}
                     >
@@ -852,11 +916,10 @@ export default function AttendanceExcel() {
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
-                    className={`w-10 h-10 rounded-xl font-black transition-all cursor-pointer shadow-sm text-sm ${
-                      currentPage === pageNum 
-                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' 
-                        : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-primary)] hover:bg-[var(--bg-tertiary)]'
-                    }`}
+                    className={`w-10 h-10 rounded-xl font-black transition-all cursor-pointer shadow-sm text-sm ${currentPage === pageNum
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
+                      : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-primary)] hover:bg-[var(--bg-tertiary)]'
+                      }`}
                   >
                     {pageNum}
                   </button>
