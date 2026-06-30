@@ -56,8 +56,9 @@ async function listBackups(app) {
     
     return {
       filename: f,
-      path: fullPath,
+      absolutePath: fullPath,
       createdAt: `${dateStr} ${timeStr}`,
+      sizeBytes: stat.size,
       sizeKB: Math.round(stat.size / 1024)
     };
   });
@@ -83,8 +84,57 @@ async function restoreBackup(app, backupPath, dbPath) {
   return true;
 }
 
+async function exportBackup(app, sourceFilename, destPath) {
+  const backupDir = getBackupDir(app);
+  const sourcePath = path.join(backupDir, sourceFilename);
+  
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error('Backup file not found in backups directory');
+  }
+  
+  // Validate source is within backup directory
+  const resolved = path.resolve(sourcePath);
+  const resolvedBackupDir = path.resolve(backupDir);
+  if (!resolved.startsWith(resolvedBackupDir)) {
+    throw new Error('ACCESS_DENIED: Source backup path outside allowed directory');
+  }
+  
+  // Copy to user-chosen destination
+  fs.copyFileSync(resolved, destPath);
+  console.log(`[Backup] Exported backup to: ${destPath}`);
+  return { success: true, destPath };
+}
+
+async function importBackup(app, sourcePath) {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error('Selected file not found');
+  }
+  
+  // Validate file is a .sqlite file
+  if (!sourcePath.endsWith('.sqlite')) {
+    throw new Error('Invalid file type. Only .sqlite backup files are supported.');
+  }
+  
+  const backupDir = getBackupDir(app);
+  fs.mkdirSync(backupDir, { recursive: true });
+  
+  // Generate timestamped filename for imported backup
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const importName = `hrms_imported_${timestamp}.sqlite`;
+  const destPath = path.join(backupDir, importName);
+  
+  // Copy imported file into backups directory
+  fs.copyFileSync(sourcePath, destPath);
+  console.log(`[Backup] Imported backup as: ${importName}`);
+  return { success: true, filename: importName, path: destPath };
+}
+
 module.exports = {
   createBackup,
   listBackups,
-  restoreBackup
+  restoreBackup,
+  exportBackup,
+  importBackup
 };

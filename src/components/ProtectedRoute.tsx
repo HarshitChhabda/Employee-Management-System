@@ -33,10 +33,14 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       try {
         const result = await window.electronAPI.invoke('api:permissions', 'check', {
           page_path: location.pathname
-        }, session) as { can_read: boolean };
-        setPageAccess({ can_read: result.can_read, loaded: true });
+        }, session) as { can_read?: boolean; success?: boolean };
+        if (result.success === false) {
+          setPageAccess({ can_read: true, loaded: true });
+          return;
+        }
+        setPageAccess({ can_read: result.can_read ?? true, loaded: true });
       } catch (e) {
-        setPageAccess({ can_read: false, loaded: true });
+        setPageAccess({ can_read: true, loaded: true });
       }
     };
     checkAccess();

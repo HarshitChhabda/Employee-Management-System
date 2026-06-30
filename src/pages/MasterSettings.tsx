@@ -359,6 +359,68 @@ export default function MasterSettings() {
     }
   };
 
+  const handleExportBackup = async (filename: string) => {
+    try {
+      // @ts-ignore
+      if (window.electronAPI) {
+        // @ts-ignore
+        const result = await window.electronAPI.invoke('dialog:save-file', {
+          title: 'Export Backup',
+          defaultPath: filename,
+          filters: [{ name: 'SQLite Backup', extensions: ['sqlite'] }]
+        }) as any;
+        if (result && !result.canceled && result.filePath) {
+          setBackupLoading(true);
+          try {
+            // @ts-ignore
+            const res = await window.electronAPI.invoke('api:backup:export', filename, result.filePath) as any;
+            if (res && res.success) {
+              showMsg(language === 'hi' ? `बैकअप सफलतापूर्वक एक्सपोर्ट हुआ: ${result.filePath}` : `Backup exported successfully to: ${result.filePath}`);
+            } else {
+              showMsg(res?.error || 'Export failed', 'error');
+            }
+          } finally {
+            setBackupLoading(false);
+          }
+        }
+      }
+    } catch (e) {
+      showMsg('Export failed / एक्सपोर्ट विफल', 'error');
+    }
+  };
+
+  const handleImportBackup = async () => {
+    try {
+      // @ts-ignore
+      if (window.electronAPI) {
+        // @ts-ignore
+        const result = await window.electronAPI.invoke('dialog:open-file', {
+          title: 'Select Backup File to Import',
+          filters: [{ name: 'SQLite Backup', extensions: ['sqlite'] }],
+          properties: ['openFile']
+        }) as any;
+        if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
+          const filePath = result.filePaths[0];
+          setBackupLoading(true);
+          try {
+            // @ts-ignore
+            const res = await window.electronAPI.invoke('api:backup:import', filePath) as any;
+            if (res && res.success) {
+              showMsg(language === 'hi' ? `बैकअप सफलतापूर्वक इम्पोर्ट हुआ: ${res.filename}` : `Backup imported successfully as: ${res.filename}`);
+              fetchBackups();
+            } else {
+              showMsg(res?.error || 'Import failed', 'error');
+            }
+          } finally {
+            setBackupLoading(false);
+          }
+        }
+      }
+    } catch (e) {
+      showMsg('Import failed / इम्पोर्ट विफल', 'error');
+    }
+  };
+
   // ─── Update Panel Logic ───
   const fetchUpdates = async () => {
     try {
@@ -917,14 +979,24 @@ export default function MasterSettings() {
               </div>
 
               {!isReadOnly && (
-                <button
-                  onClick={handleCreateBackup}
-                  disabled={backupLoading}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer flex-shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Backup Now</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleImportBackup}
+                    disabled={backupLoading}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer flex-shrink-0"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Import Backup</span>
+                  </button>
+                  <button
+                    onClick={handleCreateBackup}
+                    disabled={backupLoading}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer flex-shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Backup Now</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -953,13 +1025,23 @@ export default function MasterSettings() {
                     </div>
 
                     {!isReadOnly && (
-                      <button
-                        onClick={() => handleRestoreBackup(bak.filename, bak.absolutePath)}
-                        disabled={backupLoading}
-                        className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-500 hover:shadow-lg disabled:opacity-40 text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer flex-shrink-0"
-                      >
-                        Restore Snapshot
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleExportBackup(bak.filename)}
+                          disabled={backupLoading}
+                          className="px-3.5 py-2 bg-green-500/10 hover:bg-green-500 hover:text-white text-green-500 hover:shadow-lg disabled:opacity-40 text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer flex-shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5 inline mr-1" />
+                          Export
+                        </button>
+                        <button
+                          onClick={() => handleRestoreBackup(bak.filename, bak.absolutePath)}
+                          disabled={backupLoading}
+                          className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-500 hover:shadow-lg disabled:opacity-40 text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer flex-shrink-0"
+                        >
+                          Restore Snapshot
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))

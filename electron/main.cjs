@@ -26,7 +26,7 @@ const { autoUpdater } = require('electron-updater');
 const setupDatabase = require('./database.cjs');
 const registerApiHandlers = require('./api.cjs');
 const { saveSession, loadSession, clearSession, touchSession, isSessionExpired, getSessionTimeoutMinutes } = require('./sessionManager.cjs');
-const { createBackup, listBackups, restoreBackup } = require('./backupManager.cjs');
+const { createBackup, listBackups, restoreBackup, exportBackup, importBackup } = require('./backupManager.cjs');
 const { saveSupabaseConfig, loadSupabaseConfig, processSyncQueue, checkSyncStatus, pullFromSupabase } = require('./syncEngine.cjs');
 const { verifyPassword, hashPassword, isPasswordHashed, validatePasswordStrength } = require('./passwordUtils.cjs');
 const {
@@ -339,6 +339,15 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('api:backup:restore', async (event, backupFilePath) => {
     return await restoreBackup(app, backupFilePath, dbPath);
+  });
+
+  ipcMain.handle('api:backup:export', async (event, sourceFilename, destPath) => {
+    return await exportBackup(app, sourceFilename, destPath);
+  });
+
+  ipcMain.handle('api:backup:import', async (event, sourcePath) => {
+    const result = await importBackup(app, sourcePath);
+    return result;
   });
 
   // Sync Engine IPC Handlers
@@ -819,6 +828,28 @@ app.whenReady().then(async () => {
     const buffer = fs.readFileSync(filePath);
     const base64 = buffer.toString('base64');
     return `data:${mime};base64,${base64}`;
+  });
+
+  // Generic Save File Dialog
+  ipcMain.handle('dialog:save-file', async (event, options) => {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const result = await dialog.showSaveDialog(win, {
+      title: options?.title || 'Save File',
+      defaultPath: options?.defaultPath || '',
+      filters: options?.filters || []
+    });
+    return result;
+  });
+
+  // Generic Open File Dialog
+  ipcMain.handle('dialog:open-file', async (event, options) => {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const result = await dialog.showOpenDialog(win, {
+      title: options?.title || 'Open File',
+      filters: options?.filters || [],
+      properties: options?.properties || ['openFile']
+    });
+    return result;
   });
 
   createWindow();

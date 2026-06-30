@@ -72,6 +72,7 @@ export default function AttendanceExcel() {
   const [designationFilter, setDesignationFilter] = useState('');
   const [masterDepartments, setMasterDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [masterDesignations, setMasterDesignations] = useState<Array<{ id: string; name: string }>>([]);
+  const [changedKeys, setChangedKeys] = useState<Set<string>>(new Set());
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -117,6 +118,7 @@ export default function AttendanceExcel() {
         mapped[key] = record.status;
       });
       setAttendanceData(mapped);
+      setChangedKeys(new Set());
     } catch (err) {
       console.error('Attendance fetch error:', err);
       showToast('Failed to load attendance data', 'error');
@@ -147,6 +149,11 @@ export default function AttendanceExcel() {
       if (status) newData[key] = status;
       else delete newData[key];
       return newData;
+    });
+    setChangedKeys(prev => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
     });
   };
 
@@ -294,17 +301,28 @@ export default function AttendanceExcel() {
   const fillSelected = () => {
     if (!bulkStatus) return;
     const daysInMonth = getDaysInMonth();
+    const newChanged = new Set<string>();
     setAttendanceData(prev => {
       const newData = { ...prev };
       selectedRows.forEach(empId => {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const key = `${empId}_${dateStr}`;
-          if (!prev[key]) newData[key] = bulkStatus;
+          if (!prev[key]) {
+            newData[key] = bulkStatus;
+            newChanged.add(key);
+          }
         }
       });
       return newData;
     });
+    if (newChanged.size > 0) {
+      setChangedKeys(prev => {
+        const next = new Set(prev);
+        newChanged.forEach(k => next.add(k));
+        return next;
+      });
+    }
   };
 
   const fillCurrentPage = () => {
@@ -312,63 +330,106 @@ export default function AttendanceExcel() {
     const start = (currentPage - 1) * ROWS_PER_PAGE;
     const end = Math.min(start + ROWS_PER_PAGE, filteredEmployees.length);
     const daysInMonth = getDaysInMonth();
+    const newChanged = new Set<string>();
     setAttendanceData(prev => {
       const newData = { ...prev };
       for (let i = start; i < end; i++) {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const key = `${filteredEmployees[i].id}_${dateStr}`;
-          if (!prev[key]) newData[key] = bulkStatus;
+          if (!prev[key]) {
+            newData[key] = bulkStatus;
+            newChanged.add(key);
+          }
         }
       }
       return newData;
     });
+    if (newChanged.size > 0) {
+      setChangedKeys(prev => {
+        const next = new Set(prev);
+        newChanged.forEach(k => next.add(k));
+        return next;
+      });
+    }
   };
 
   const fillAll = () => {
     if (!bulkStatus) return;
     const daysInMonth = getDaysInMonth();
+    const newChanged = new Set<string>();
     setAttendanceData(prev => {
       const newData = { ...prev };
       filteredEmployees.forEach(emp => {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const key = `${emp.id}_${dateStr}`;
-          if (!prev[key]) newData[key] = bulkStatus;
+          if (!prev[key]) {
+            newData[key] = bulkStatus;
+            newChanged.add(key);
+          }
         }
       });
       return newData;
     });
+    if (newChanged.size > 0) {
+      setChangedKeys(prev => {
+        const next = new Set(prev);
+        newChanged.forEach(k => next.add(k));
+        return next;
+      });
+    }
   };
 
   const clearSelected = () => {
     const daysInMonth = getDaysInMonth();
+    const newChanged = new Set<string>();
     setAttendanceData(prev => {
       const newData = { ...prev };
       selectedRows.forEach(empId => {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const key = `${empId}_${dateStr}`;
-          if (prev[key]) delete newData[key];
+          if (prev[key]) {
+            delete newData[key];
+            newChanged.add(key);
+          }
         }
       });
       return newData;
     });
+    if (newChanged.size > 0) {
+      setChangedKeys(prev => {
+        const next = new Set(prev);
+        newChanged.forEach(k => next.add(k));
+        return next;
+      });
+    }
   };
 
   const clearAll = () => {
     const daysInMonth = getDaysInMonth();
+    const newChanged = new Set<string>();
     setAttendanceData(prev => {
       const newData: Record<string, string> = {};
       filteredEmployees.forEach(emp => {
         for (let day = 1; day <= daysInMonth; day++) {
           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const key = `${emp.id}_${dateStr}`;
-          if (prev[key]) newData[key] = '';
+          if (prev[key]) {
+            newChanged.add(key);
+          }
         }
       });
       return newData;
     });
+    if (newChanged.size > 0) {
+      setChangedKeys(prev => {
+        const next = new Set(prev);
+        newChanged.forEach(k => next.add(k));
+        return next;
+      });
+    }
   };
 
   const autoFillWeeklyOffs = async () => {
@@ -427,6 +488,12 @@ export default function AttendanceExcel() {
       return newData;
     });
 
+    setChangedKeys(prev => {
+      const next = new Set(prev);
+      Object.keys(toFill).forEach(k => next.add(k));
+      return next;
+    });
+
     showConfirmation(
       'Auto-Fill Complete / साप्ताहिक अवकाश भरे गए',
       `${count} weekly off entries filled successfully! / ${count} साप्ताहिक अवकाश सफलतापूर्वक भरे गए!`,
@@ -471,10 +538,15 @@ export default function AttendanceExcel() {
   };
 
   const saveAttendance = async () => {
+    if (changedKeys.size === 0) {
+      showToast('No changes to save / सहेजने के लिए कोई बदलाव नहीं', 'info');
+      return;
+    }
     setSaving(true);
     try {
       const records: { employee_id: string; date: string; status: string; remarks?: string }[] = [];
-      Object.entries(attendanceData).forEach(([key, status]) => {
+      changedKeys.forEach(key => {
+        const status = attendanceData[key];
         const date = key.slice(-10);
         const empId = key.slice(0, key.length - 11);
         if (empId && date) {
@@ -485,6 +557,7 @@ export default function AttendanceExcel() {
       const result = await attendanceAPI.upsert(records);
 
       if (result) {
+        setChangedKeys(new Set());
         showConfirmation(
           result.errors && result.errors.length > 0
             ? 'Partial Save — Balance Issues / आंशिक सेव'

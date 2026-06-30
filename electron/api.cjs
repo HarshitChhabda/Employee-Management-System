@@ -1038,14 +1038,17 @@ async function registerApiHandlers(ipcMain, db, app) {
     }
   });
 
-  async function validateAndUpdateLeaveBalance(db, employee_id, date, newStatus, oldStatus) {
+  async function validateAndUpdateLeaveBalance(db, employee_id, date, newStatus, oldStatus, balanceMap) {
     const year = new Date(date).getFullYear();
+    const mapKey = `${employee_id}_${year}`;
     
-    // Get or create leave balance record
-    let balance = await db.get(
-      `SELECT * FROM leave_balances WHERE employee_id = ? AND year = ?`,
-      [employee_id, year]
-    );
+    let balance = balanceMap ? balanceMap[mapKey] : null;
+    if (!balance) {
+      balance = await db.get(
+        `SELECT * FROM leave_balances WHERE employee_id = ? AND year = ?`,
+        [employee_id, year]
+      );
+    }
     
     if (!balance) {
       await db.run(
@@ -1056,7 +1059,6 @@ async function registerApiHandlers(ipcMain, db, app) {
       balance = { cl_total: 12, pl_total: 15, used_cl: 0, used_pl: 0 };
     }
     
-    // Calculate deduction delta
     const getDeduction = (status) => {
       if (status === 'CL') return { type: 'cl', value: 1 };
       if (status === 'HCL') return { type: 'cl', value: 0.5 };
@@ -1067,7 +1069,6 @@ async function registerApiHandlers(ipcMain, db, app) {
     const oldDeduction = getDeduction(oldStatus);
     const newDeduction = getDeduction(newStatus);
     
-    // Reverse old deduction if applicable
     if (oldDeduction) {
       if (oldDeduction.type === 'cl') {
         balance.used_cl = Math.max(0, balance.used_cl - oldDeduction.value);
@@ -1076,7 +1077,6 @@ async function registerApiHandlers(ipcMain, db, app) {
       }
     }
     
-    // Validate new deduction
     if (newDeduction) {
       const remaining = newDeduction.type === 'cl'
         ? (balance.cl_total - balance.used_cl)
@@ -1092,7 +1092,6 @@ async function registerApiHandlers(ipcMain, db, app) {
         );
       }
       
-      // Apply new deduction
       if (newDeduction.type === 'cl') {
         balance.used_cl += newDeduction.value;
       } else {
@@ -1100,14 +1099,15 @@ async function registerApiHandlers(ipcMain, db, app) {
       }
     }
     
-    // Update leave_balances
     await db.run(
       `UPDATE leave_balances SET used_cl = ?, used_pl = ?, updated_at = CURRENT_TIMESTAMP
        WHERE employee_id = ? AND year = ?`,
       [balance.used_cl, balance.used_pl, employee_id, year]
     );
     
-    // Sync leave_history
+    // Update balanceMap cache
+    if (balanceMap) balanceMap[mapKey] = balance;
+    
     if (newDeduction) {
       const leaveType = newDeduction.type === 'cl' ? 'CL' : 'PL';
       await db.run(
@@ -1171,17 +1171,59 @@ async function registerApiHandlers(ipcMain, db, app) {
         const records = Array.isArray(data) ? data : [data];
         const errors = [];
         
+        // Batch fetch all employee entities in one query
+        const empIds = [...new Set(records.map(r => r.employee_id).filter(Boolean))];
+        if (empIds.length === 0) return { success: true, errors: [], savedCount: 0 };
+        
+        const placeholders = empIds.map(() => '?').join(',');
+        const empEntities = await db.all(
+          `SELECT id, entity FROM employees WHERE id IN (${placeholders})`,
+          empIds
+        );
+        const empEntityMap = {};
+        empEntities.forEach(e => { empEntityMap[e.id] = e.entity; });
+
+        // Batch fetch all old statuses in one query
+        const dateEmpPairs = records.map(r => `${r.employee_id}|${r.date}`).filter(Boolean);
+        const oldStatusMap = {};
+        if (dateEmpPairs.length > 0) {
+          // Fetch all existing attendance for these employees+dates in one query
+          const allEmpDates = records.map(r => ({ employee_id: r.employee_id, date: r.date }));
+          const batchSize = 500;
+          for (let i = 0; i < allEmpDates.length; i += batchSize) {
+            const batch = allEmpDates.slice(i, i + batchSize);
+            const batchPlaceholders = batch.map(() => '(?, ?)').join(',');
+            const oldRecords = await db.all(
+              `SELECT employee_id, date, status FROM attendance WHERE (employee_id, date) IN (${batchPlaceholders})`,
+              batch.flatMap(r => [r.employee_id, r.date])
+            );
+            oldRecords.forEach(r => { oldStatusMap[`${r.employee_id}_${r.date}`] = r.status; });
+          }
+        }
+
+        // Batch fetch all leave balances in one query
+        const years = [...new Set(records.map(r => new Date(r.date).getFullYear()))];
+        const balanceMap = {};
+        if (years.length > 0 && empIds.length > 0) {
+          const balPlaceholders = empIds.map(() => '?').join(',');
+          const yearPlaceholders = years.map(() => '?').join(',');
+          const balances = await db.all(
+            `SELECT * FROM leave_balances WHERE employee_id IN (${balPlaceholders}) AND year IN (${yearPlaceholders})`,
+            [...empIds, ...years]
+          );
+          balances.forEach(b => { balanceMap[`${b.employee_id}_${b.year}`] = b; });
+        }
+
         await db.run('SAVEPOINT sp_attendance_upsert');
         try {
           for (const record of records) {
             const { employee_id, date, status, remarks } = record;
             if (!employee_id || !date) continue;
             
-            // Get employee entity and validate write permission
-            const emp = await db.get('SELECT entity FROM employees WHERE id = ?', [employee_id]);
-            if (!emp) continue;
+            const entity = empEntityMap[employee_id];
+            if (!entity) continue;
 
-            if (!canWrite(session, emp.entity)) {
+            if (!canWrite(session, entity)) {
               errors.push({
                 employee_id,
                 date,
@@ -1190,12 +1232,8 @@ async function registerApiHandlers(ipcMain, db, app) {
               continue;
             }
 
-            // Get old status
-            const old = await db.get(
-              'SELECT status FROM attendance WHERE employee_id=? AND date=?',
-              [employee_id, date]
-            );
-            const oldStatus = old?.status || null;
+            const oldKey = `${employee_id}_${date}`;
+            const oldStatus = oldStatusMap[oldKey] || null;
             const finalStatus = status?.toUpperCase().trim();
             
             if (!finalStatus) {
@@ -1203,20 +1241,17 @@ async function registerApiHandlers(ipcMain, db, app) {
                 'DELETE FROM attendance WHERE employee_id=? AND date=?',
                 [employee_id, date]
               );
-              // Reverse any leave balance
               await validateAndUpdateLeaveBalance(
-                db, employee_id, date, null, oldStatus
+                db, employee_id, date, null, oldStatus, balanceMap
               );
-
-              // Sync Queue Delete
-              await enqueueSync('attendance', `${employee_id}_${date}`, 'DELETE', { employee_id, date }, emp.entity);
+              await enqueueSync('attendance', oldKey, 'DELETE', { employee_id, date }, entity);
               continue;
             }
             
             // Validate leave balance
             try {
               await validateAndUpdateLeaveBalance(
-                db, employee_id, date, finalStatus, oldStatus
+                db, employee_id, date, finalStatus, oldStatus, balanceMap
               );
             } catch (balanceErr) {
               errors.push({
@@ -1224,7 +1259,7 @@ async function registerApiHandlers(ipcMain, db, app) {
                 date,
                 error: balanceErr.message
               });
-              continue; // Skip this record, continue others
+              continue;
             }
             
             // UPSERT attendance
@@ -1238,18 +1273,16 @@ async function registerApiHandlers(ipcMain, db, app) {
               [employee_id, date, finalStatus, remarks || '']
             );
 
-            // Sync Queue Insert/Update
-            await enqueueSync('attendance', `${employee_id}_${date}`, 'INSERT', {
+            await enqueueSync('attendance', oldKey, 'INSERT', {
               employee_id, date, status: finalStatus, remarks: remarks || ''
-            }, emp.entity);
+            }, entity);
           }
           
           await db.run('RELEASE SAVEPOINT sp_attendance_upsert');
           
-          // Return with errors if any
           return { 
             success: true, 
-            errors,  // Frontend shows these as warnings
+            errors,
             savedCount: records.length - errors.length
           };
           
